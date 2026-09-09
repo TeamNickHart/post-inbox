@@ -5,8 +5,9 @@
 # Needs Contents: read/write and Pull requests: read/write on the target repo.
 GITHUB_TOKEN="ghp_replace_me"
 
-# Shared secret that must appear in the email subject as [token].
-EMAIL_SUBJECT_TOKEN="replace-with-a-long-random-string"
+# Optional shared secret, accepted in the email subject as [token]. Only
+# required when SPF/DKIM verdicts cannot vouch for a message — see README.
+EMAIL_SUBJECT_TOKEN=""
 
 # Comma-separated envelope sender addresses permitted to create posts.
 ALLOWED_SENDERS="you@example.com"

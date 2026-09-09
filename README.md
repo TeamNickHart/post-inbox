@@ -36,13 +36,25 @@ or Postmark means rewriting only `src/adapters/`.
 The HTTPS path takes a bearer token. Straightforward.
 
 The email path is the interesting one, because a `From:` header is
-trivially forgeable. Three checks, all of which must pass:
+trivially forgeable. Two independent factors are available:
 
-1. **Envelope sender allowlist** — the address must be one you configured.
-2. **A shared secret in the subject line**, written as `[token]` and
-   stripped out before the subject becomes the post title.
-3. **SPF/DKIM verdicts** from the receiving mail server, requiring a pass
-   from at least one of SPF or DKIM and no DMARC failure.
+1. **The strong pair** — the envelope sender must be on your allowlist, *and*
+   the receiving mail server's SPF/DKIM verdicts must pass (at least one of
+   SPF or DKIM, with no DMARC failure). A forged sender fails this: an
+   attacker cannot produce your domain's DKIM signature.
+
+2. **A shared secret in the subject line**, written as `[token]` and stripped
+   out before the subject becomes the post title.
+
+**The token is only required when the strong pair cannot carry the message** —
+no allowlist configured, verdict checking disabled, or verdicts that did not
+actually pass. When SPF/DKIM pass and you are on the allowlist, just write a
+normal subject line. If you do supply a token it must still be correct, so a
+stale one fails loudly rather than being ignored.
+
+The two can never both be absent. Disabling verdict checking makes the token
+mandatory; having no token configured means a message without passing
+verdicts is simply rejected.
 
 > **Note on check 3:** this check is known to be fragile on Cloudflare.
 > [cloudflare/workerd#6740](https://github.com/cloudflare/workerd/issues/6740)
@@ -93,12 +105,16 @@ Non-secret settings live in `wrangler.jsonc` under `vars`:
 
 ```bash
 npx wrangler secret put GITHUB_TOKEN
-npx wrangler secret put EMAIL_SUBJECT_TOKEN
 npx wrangler secret put ALLOWED_SENDERS
 npx wrangler secret put API_TOKEN
+
+# Optional — only needed as a fallback when SPF/DKIM cannot vouch for a
+# message. Set it if you disable verdict checking, or if your mail arrives
+# without verdicts.
+npx wrangler secret put EMAIL_SUBJECT_TOKEN
 ```
 
-Generate the two tokens with `openssl rand -hex 24`. `ALLOWED_SENDERS` is a
+Generate tokens with `openssl rand -hex 24`. `ALLOWED_SENDERS` is a
 comma-separated list of addresses.
 
 ### 4. Deploy
@@ -121,15 +137,17 @@ In the Cloudflare dashboard, on a domain you control:
 
 ### By email
 
-Mail the routing address with the subject as your post title, plus the
-shared secret in brackets:
+Mail the routing address with the subject as your post title:
 
 ```
-Subject: My New Post [your-subject-token]
+Subject: My New Post
 
 The body is markdown, passed through as you wrote it.
 Bare URLs like https://example.com get wrapped into links.
 ```
+
+If your mail does not carry passing SPF/DKIM verdicts, add the shared secret
+in brackets — `Subject: My New Post [your-subject-token]`.
 
 ### By HTTPS
 

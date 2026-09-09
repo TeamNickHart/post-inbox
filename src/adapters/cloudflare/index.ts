@@ -1,8 +1,7 @@
 import PostalMime from 'postal-mime'
 import { createDraftPost } from '../../core/createDraftPost.ts'
 import { GitHubClient } from '../../core/github.ts'
-import { authenticateSender, extractSubjectToken } from '../../core/senderAuth.ts'
-import { stripSignature } from '../../core/signature.ts'
+import { emailToPost } from '../../core/emailToPost.ts'
 import type { DraftPostRequest } from '../../core/types.ts'
 import { senderAuthPolicyFromEnv, siteConfigFromEnv, type Env } from './config.ts'
 
@@ -17,53 +16,39 @@ import { senderAuthPolicyFromEnv, siteConfigFromEnv, type Env } from './config.t
  */
 export default {
   async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
-    const subject = message.headers.get('subject') ?? ''
+    const email = await PostalMime.parse(message.raw)
 
-    const auth = authenticateSender(
+    const decision = emailToPost(
       {
+        // The envelope sender, not the `From:` header — the header is
+        // trivially forgeable and is not what the platform authenticated.
         envelopeFrom: message.from,
+        subject: message.headers.get('subject') ?? '',
         authenticationResults: message.headers.get('authentication-results'),
         arcAuthenticationResults: message.headers.get('arc-authentication-results'),
-        subject,
+        text: email.text,
+        date: email.date ? new Date(email.date) : null,
       },
-      senderAuthPolicyFromEnv(env),
+      {
+        policy: senderAuthPolicyFromEnv(env),
+        stripSignature: env.STRIP_SIGNATURE !== 'false',
+      },
     )
 
-    if (!auth.ok) {
-      // Logged for us, but the rejection reason sent back to the sender is
-      // deliberately generic.
-      console.error(`Rejected inbound email: ${auth.reason}`)
+    if (!decision.ok) {
+      // Logged for us; the sender only ever sees a generic rejection.
+      console.error(`Rejected inbound email: ${decision.reason}`)
       message.setReject('Message rejected')
       return
     }
 
-    const email = await PostalMime.parse(message.raw)
-    const { title } = extractSubjectToken(subject)
-    if (!title) {
-      console.error('Rejected inbound email: empty subject after removing token')
-      message.setReject('Message rejected')
-      return
+    if (decision.viaSubjectToken) {
+      // Not an error, but worth noticing: SPF/DKIM did not vouch for this
+      // message, so the shared secret is all that authenticated it.
+      console.warn('Message admitted by subject token; SPF/DKIM did not pass')
     }
 
-    // Plaintext only for now, per the POC scope. `email.text` is absent
-    // for HTML-only mail, which we do not attempt to convert.
-    const rawBody = email.text?.trim()
-    const body =
-      rawBody && env.STRIP_SIGNATURE !== 'false' ? stripSignature(rawBody).trim() : rawBody
-    if (!body) {
-      console.error('Rejected inbound email: no plaintext body')
-      message.setReject('Message rejected')
-      return
-    }
-
-    const request: DraftPostRequest = {
-      title,
-      body,
-      date: email.date ? new Date(email.date) : new Date(),
-      author: auth.sender,
-    }
-
-    const result = await createDraftPost(request, siteConfigFromEnv(env), githubClient(env))
+    const result = await createDraftPost(decision.request, siteConfigFromEnv(env), githubClient(env))
     console.log(`Created draft PR #${result.pullRequestNumber}: ${result.pullRequestUrl}`)
   },
 

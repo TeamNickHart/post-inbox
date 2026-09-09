@@ -1,24 +1,30 @@
 /**
  * Sender authentication for the email path.
  *
- * A `From:` header is trivially forgeable, so an allowlist alone is not
- * a real control. Two independent checks are applied:
+ * A `From:` header is trivially forgeable, so an allowlist alone is not a
+ * real control. Two independent factors are available:
  *
- *  1. The SPF/DKIM/DMARC verdicts the receiving MX stamped on the
- *     message, parsed out of `Authentication-Results` (or the ARC
- *     variant). This is the check the design doc calls for.
+ *  1. **The strong pair**: an allowlisted envelope sender, plus the
+ *     SPF/DKIM/DMARC verdicts the receiving MX stamped on the message. A
+ *     forged sender fails these, because an attacker cannot produce the
+ *     victim domain's DKIM signature.
  *
- *  2. A shared secret the sender includes in the subject line. This does
- *     not depend on the mail platform stamping anything, which matters
- *     because Cloudflare Email Routing does not currently populate those
- *     verdicts reliably (cloudflare/workerd#6740). Without this second
- *     factor, an unstamped message would leave the allowlist as the only
- *     barrier — i.e. no barrier at all.
+ *  2. **A shared secret in the subject line**, as a fallback for when the
+ *     strong pair is unavailable. It does not depend on the mail platform
+ *     stamping anything, which matters because Cloudflare Email Routing has
+ *     been reported to deliver messages with no verdicts at all
+ *     (cloudflare/workerd#6740).
  *
- * Both must pass. Verdicts that are absent are treated as failures, never
- * as "assume fine": this fails closed.
+ * The token is required only when the strong pair did not carry the
+ * message: no allowlist configured, verdict checking disabled, or verdicts
+ * that did not actually pass. When SPF/DKIM passed *and* the sender is on a
+ * configured allowlist, the token is redundant and is not demanded — but if
+ * one is supplied it must still be correct, so a stale token in a subject
+ * line fails loudly rather than being silently ignored.
+ *
+ * Verdicts that are absent are treated as failures, never as "assume fine":
+ * this fails closed.
  */
-
 export type AuthVerdict = 'pass' | 'fail' | 'none'
 
 export interface AuthenticationResults {
@@ -30,7 +36,12 @@ export interface AuthenticationResults {
 export interface SenderAuthPolicy {
   /** Lowercased envelope addresses permitted to create posts. */
   allowedSenders: string[]
-  /** Shared secret required in the subject line. */
+  /**
+   * Shared secret accepted in the subject line. Required only when the
+   * SPF/DKIM + allowlist pair cannot carry the message on its own; see the
+   * module comment. May be empty, in which case that fallback does not
+   * exist and a message lacking passing verdicts is simply rejected.
+   */
   subjectToken: string
   /**
    * Set false only to work around a mail platform that does not stamp
@@ -51,7 +62,17 @@ export interface SenderAuthInput {
 }
 
 export type SenderAuthResult =
-  | { ok: true; sender: string; auth: AuthenticationResults }
+  | {
+      ok: true
+      sender: string
+      auth: AuthenticationResults
+      /**
+       * True when the subject token was what let this message through,
+       * rather than passing SPF/DKIM. Worth logging: it means the strong
+       * controls were unavailable.
+       */
+      viaSubjectToken: boolean
+    }
   | { ok: false; reason: string }
 
 /**
@@ -116,17 +137,16 @@ export function authenticateSender(
 ): SenderAuthResult {
   const sender = input.envelopeFrom.trim().toLowerCase()
 
-  const allowed = policy.allowedSenders.map((address) => address.trim().toLowerCase())
+  const allowed = policy.allowedSenders
+    .map((address) => address.trim().toLowerCase())
+    .filter(Boolean)
+
+  // An empty allowlist is a misconfiguration, not "allow everyone".
+  if (allowed.length === 0) {
+    return { ok: false, reason: 'no allowed senders configured' }
+  }
   if (!allowed.includes(sender)) {
     return { ok: false, reason: `sender not allowlisted: ${sender}` }
-  }
-
-  const { token } = extractSubjectToken(input.subject)
-  if (!policy.subjectToken) {
-    return { ok: false, reason: 'no subject token configured' }
-  }
-  if (!token || !secretsMatch(token, policy.subjectToken)) {
-    return { ok: false, reason: 'missing or invalid subject token' }
   }
 
   // Prefer the header the receiving MX stamped; fall back to the ARC
@@ -135,17 +155,51 @@ export function authenticateSender(
     input.authenticationResults ?? input.arcAuthenticationResults,
   )
 
-  if (policy.requireAuthResults !== false) {
-    if (auth.spf !== 'pass' && auth.dkim !== 'pass') {
-      return {
-        ok: false,
-        reason: `no passing SPF or DKIM verdict (spf=${auth.spf}, dkim=${auth.dkim}, dmarc=${auth.dmarc})`,
-      }
+  // The strong pair: a passing SPF or DKIM verdict, no DMARC failure, and a
+  // sender that is on the allowlist (already established above). DKIM alone
+  // is enough because forwarding routinely breaks SPF while leaving the
+  // signature intact.
+  const verdictsChecked = policy.requireAuthResults !== false
+  const verdictsPassed =
+    (auth.spf === 'pass' || auth.dkim === 'pass') && auth.dmarc !== 'fail'
+  const strongPairHolds = verdictsChecked && verdictsPassed
+
+  const { token } = extractSubjectToken(input.subject)
+
+  // A supplied token must be correct even when it was not required — a
+  // stale or wrong token should fail loudly, not be quietly ignored.
+  if (token !== null) {
+    if (!policy.subjectToken || !secretsMatch(token, policy.subjectToken)) {
+      return { ok: false, reason: 'invalid subject token' }
     }
-    if (auth.dmarc === 'fail') {
-      return { ok: false, reason: 'DMARC failed' }
-    }
+    return { ok: true, sender, auth, viaSubjectToken: !strongPairHolds }
   }
 
-  return { ok: true, sender, auth }
+  if (strongPairHolds) {
+    return { ok: true, sender, auth, viaSubjectToken: false }
+  }
+
+  // The strong pair did not carry this message, so the token was the
+  // fallback — and it is absent.
+  if (!policy.subjectToken) {
+    return {
+      ok: false,
+      reason: `no subject token configured and ${whyVerdictsFailed(auth, verdictsChecked)}`,
+    }
+  }
+  return { ok: false, reason: `subject token required: ${whyVerdictsFailed(auth, verdictsChecked)}` }
+}
+
+/** Explain, for the log, why the SPF/DKIM pair did not carry a message. */
+function whyVerdictsFailed(auth: AuthenticationResults, verdictsChecked: boolean): string {
+  if (!verdictsChecked) return 'verdict checking is disabled'
+
+  const detail = `spf=${auth.spf}, dkim=${auth.dkim}, dmarc=${auth.dmarc}`
+  // Report DMARC separately: a DMARC failure alongside a passing SPF or DKIM
+  // is the signature of a forgery that got past one check but failed
+  // alignment, which reads very differently in a log from "nothing passed".
+  if (auth.dmarc === 'fail' && (auth.spf === 'pass' || auth.dkim === 'pass')) {
+    return `DMARC failed (${detail})`
+  }
+  return `no passing SPF or DKIM verdict (${detail})`
 }

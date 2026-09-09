@@ -11,8 +11,11 @@ import type { SiteConfig } from '../../core/types.ts'
 export interface Env {
   /** GitHub App installation token, or a PAT for local testing. */
   GITHUB_TOKEN: string
-  /** Shared secret required in the email subject as `[token]`. */
-  EMAIL_SUBJECT_TOKEN: string
+  /**
+   * Shared secret accepted in the email subject as `[token]`. Optional:
+   * it is only required when SPF/DKIM verdicts cannot carry the message.
+   */
+  EMAIL_SUBJECT_TOKEN?: string
   /** Comma-separated allowlist of envelope sender addresses. */
   ALLOWED_SENDERS: string
   /** Bearer token for the HTTPS path. */
@@ -64,7 +67,10 @@ export function senderAuthPolicyFromEnv(env: Env): SenderAuthPolicy {
       .split(',')
       .map((address) => address.trim())
       .filter(Boolean),
-    subjectToken: required(env, 'EMAIL_SUBJECT_TOKEN'),
+    // Optional by design — see senderAuth.ts. Without it, a message that
+    // arrives with no passing verdicts is rejected outright rather than
+    // falling back to a shared secret.
+    subjectToken: env.EMAIL_SUBJECT_TOKEN ?? '',
     requireAuthResults: env.REQUIRE_AUTH_RESULTS !== 'false',
   }
 }

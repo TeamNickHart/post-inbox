@@ -12,15 +12,15 @@ Last updated 2026-09-09.
 | HTTPS POST → draft PR | Working — verified, [PR #7](https://github.com/your-org/your-blog/pull/7) |
 | Email → draft PR | Working — verified, [PR #8](https://github.com/your-org/your-blog/pull/8) |
 | Sender allowlist | Working — a non-allowlisted sender is rejected |
-| Subject-token second factor | Working — verified by a rejection with the wrong token |
+| Subject token | Now a conditional fallback — only required when SPF/DKIM cannot vouch for the message |
 | SPF/DKIM verdict check | Working — Gmail-sent mail arrives with passing verdicts |
 | Bearer-token auth on HTTPS | Working — 401 with no token, wrong token, and 405 on GET |
 | Vercel preview on the PR | Passing — a generated post does not break the site build |
 | Email signature stripping | Working — verified in production, [PR #9](https://github.com/your-org/your-blog/pull/9) |
-| Tests | 56 passing |
+| Tests | 75 passing |
 
 Deployed as `post-inbox` at `https://post-inbox.example.workers.dev`,
-version `32952d03`. Inbound address is `draft@example.com` via Cloudflare
+version `606b4c2d`. Inbound address is `draft@example.com` via Cloudflare
 Email Routing.
 
 Target repo is `your-org/your-blog`, posts land in `data/blog` as

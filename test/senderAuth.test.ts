@@ -77,24 +77,38 @@ describe('authenticateSender', () => {
     expect(result).toMatchObject({ ok: false })
   })
 
-  it('rejects a correct sender with the wrong token', () => {
+  it('rejects a wrong token even when it was not required', () => {
+    // SPF/DKIM pass here, so no token was needed — but a supplied one that
+    // is wrong must fail loudly rather than being ignored.
     const result = authenticateSender(input({ subject: 'My Post [wrong-token]' }), policy)
     expect(result).toMatchObject({ ok: false })
   })
 
-  it('rejects a correct sender with no token at all', () => {
-    expect(authenticateSender(input({ subject: 'My Post' }), policy).ok).toBe(false)
+  it('does not require a token when SPF/DKIM passed and the sender is allowlisted', () => {
+    const result = authenticateSender(input({ subject: 'My Post' }), policy)
+    expect(result).toMatchObject({ ok: true, viaSubjectToken: false })
   })
 
-  it('fails closed when authentication results are absent', () => {
-    const result = authenticateSender(input({ authenticationResults: null }), policy)
-    expect(result).toMatchObject({ ok: false })
+  it('requires a token when authentication results are absent', () => {
+    expect(
+      authenticateSender(input({ authenticationResults: null, subject: 'My Post' }), policy).ok,
+    ).toBe(false)
+    // ...and accepts the same message once the token is supplied.
+    expect(
+      authenticateSender(input({ authenticationResults: null }), policy),
+    ).toMatchObject({ ok: true, viaSubjectToken: true })
   })
 
-  it('fails closed on the arc=none header cloudflare currently sends', () => {
+  it('requires a token on the arc=none header cloudflare sometimes sends', () => {
+    const bare = { authenticationResults: null, arcAuthenticationResults: 'i=1; arc=none' }
+    expect(authenticateSender(input({ ...bare, subject: 'My Post' }), policy).ok).toBe(false)
+    expect(authenticateSender(input(bare), policy)).toMatchObject({ ok: true })
+  })
+
+  it('rejects outright when verdicts are absent and no token is configured', () => {
     const result = authenticateSender(
-      input({ authenticationResults: null, arcAuthenticationResults: 'i=1; arc=none' }),
-      policy,
+      input({ authenticationResults: null, subject: 'My Post' }),
+      { ...policy, subjectToken: '' },
     )
     expect(result).toMatchObject({ ok: false })
   })
@@ -107,15 +121,18 @@ describe('authenticateSender', () => {
     expect(result.ok).toBe(true)
   })
 
-  it('rejects a dmarc failure even with a passing dkim', () => {
-    const result = authenticateSender(
-      input({ authenticationResults: 'spf=pass; dkim=pass; dmarc=fail' }),
-      policy,
-    )
-    expect(result).toMatchObject({ ok: false })
+  it('requires a token when dmarc failed despite a passing dkim', () => {
+    const dmarcFail = { authenticationResults: 'spf=pass; dkim=pass; dmarc=fail' }
+    expect(authenticateSender(input({ ...dmarcFail, subject: 'My Post' }), policy).ok).toBe(false)
+    expect(authenticateSender(input(dmarcFail), policy)).toMatchObject({
+      ok: true,
+      viaSubjectToken: true,
+    })
   })
 
-  it('still requires the subject token when auth results are not required', () => {
+  it('still requires the subject token when verdict checking is disabled', () => {
+    // Turning off verdicts removes the strong pair, so the token becomes
+    // mandatory — the two cannot both be absent.
     const relaxed = { ...policy, requireAuthResults: false }
     expect(authenticateSender(input({ authenticationResults: null }), relaxed).ok).toBe(true)
     expect(
@@ -123,8 +140,22 @@ describe('authenticateSender', () => {
     ).toBe(false)
   })
 
-  it('rejects everything when no subject token is configured', () => {
-    const result = authenticateSender(input(), { ...policy, subjectToken: '' })
+  it('rejects everything when verdicts are off and no token is configured', () => {
+    const result = authenticateSender(input({ subject: 'No token' }), {
+      ...policy,
+      subjectToken: '',
+      requireAuthResults: false,
+    })
     expect(result).toMatchObject({ ok: false })
+  })
+
+  it('rejects when the allowlist is empty rather than allowing everyone', () => {
+    const result = authenticateSender(input(), { ...policy, allowedSenders: [] })
+    expect(result).toMatchObject({ ok: false })
+  })
+
+  it('accepts a token-authenticated message without verdicts, and says so', () => {
+    const result = authenticateSender(input({ authenticationResults: null }), policy)
+    expect(result).toMatchObject({ ok: true, viaSubjectToken: true })
   })
 })
