@@ -28,6 +28,8 @@ export interface EmailToPostOptions {
   policy: SenderAuthPolicy
   /** Strip an RFC 3676 signature block from the body. Defaults to true. */
   stripSignature?: boolean
+  /** Commit the post with `draft: true`. Defaults to false. */
+  draft?: boolean
   /** Injectable for tests; defaults to the current time. */
   now?: () => Date
 }
@@ -83,6 +85,7 @@ export function emailToPost(
       body,
       date: email.date ?? (options.now ?? (() => new Date()))(),
       author: auth.sender,
+      draft: options.draft === true,
     },
   }
 }

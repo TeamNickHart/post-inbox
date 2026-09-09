@@ -4,8 +4,8 @@ Turn an email into a draft blog post — as a branch, a commit, and a pull
 request with a live preview. Never published directly.
 
 Send an email (or an HTTPS POST from a Shortcut) and a PR shows up on your
-blog repo with the post committed as `draft: true`. You review the preview
-deploy, flip `draft` to `false`, and merge.
+blog repo with the post committed on its own branch. You review the preview
+deploy and merge when you are happy with it.
 
 **Status: proof of concept.** Single site, single sender, plaintext bodies,
 no attachments. See [Roadmap](#roadmap).
@@ -194,6 +194,21 @@ template, or setting this up for a new site. See
 
 The site repo should also validate this in CI, since a post can reach it
 without going through post-inbox at all — the web editor, or a direct push.
+
+### Drafts and previews
+
+Posts are committed with `draft: false`, and the pull request is what stops
+them going live. That is deliberate: the Tailwind Nextjs Starter Blog excludes
+drafts from production builds, and a Vercel preview *is* a production build, so
+a `draft: true` post returns 404 on the very preview meant for reviewing it.
+
+Nothing is published by the post existing — it is on a branch, nothing links to
+it, and merging is an explicit act.
+
+Set `POST_AS_DRAFT=true` if you would rather merge posts to your main branch
+unpublished and flip the flag in a separate commit later. Expect the preview to
+404 in that case; check the diff instead. The HTTPS path can also pass
+`"draft": true` per request.
 
 ### Email signatures
 

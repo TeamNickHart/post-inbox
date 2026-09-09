@@ -28,6 +28,18 @@ describe('emailToPost — the genuine case', () => {
     }
   })
 
+  it('does not mark the post as a draft by default', () => {
+    const result = emailToPost(genuine(), options)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.request.draft).toBe(false)
+  })
+
+  it('marks the post as a draft when configured to', () => {
+    const result = emailToPost(genuine(), { ...options, draft: true })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.request.draft).toBe(true)
+  })
+
   it('keeps the signature when stripping is turned off', () => {
     const result = emailToPost(genuine(), { ...options, stripSignature: false })
     expect(result.ok).toBe(true)

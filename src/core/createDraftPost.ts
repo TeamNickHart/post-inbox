@@ -78,7 +78,6 @@ function pullRequestBody(request: DraftPostRequest, path: string): string {
     `- **File:** \`${path}\``,
     `- **Date:** ${formatDate(request.date)}`,
     '',
-    'The post is committed with `draft: true`. Review the Vercel preview, then',
-    'flip `draft` to `false` and merge to publish.',
+    'Review the Vercel preview, then merge to publish.',
   ].join('\n')
 }

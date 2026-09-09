@@ -73,8 +73,10 @@ export function linkifyBareUrls(body: string): string {
 /**
  * Render a full post file: YAML frontmatter plus the body.
  *
- * `draft: true` is always set — this system never publishes directly,
- * it only ever opens a PR for review.
+ * `draft` defaults to false: the pull request is what stops a post going
+ * live, and a draft post is excluded from production builds by many
+ * templates — including this site's — so `draft: true` would 404 on the
+ * preview deployment that exists to review it. See `DraftPostRequest.draft`.
  */
 export function renderPost(request: DraftPostRequest): string {
   const lines = [
@@ -85,7 +87,7 @@ export function renderPost(request: DraftPostRequest): string {
 
   const tags = request.tags ?? []
   lines.push(`tags: [${tags.map(yamlString).join(', ')}]`)
-  lines.push('draft: true')
+  lines.push(`draft: ${request.draft === true}`)
 
   if (request.summary) {
     lines.push(`summary: ${yamlString(request.summary)}`)

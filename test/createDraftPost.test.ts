@@ -79,7 +79,7 @@ describe('createDraftPost', () => {
     expect(tree.base_tree).toBe('base-tree-sha')
     expect(tree.tree).toHaveLength(1)
     expect(tree.tree[0]!.path).toBe('data/blog/hello-from-email.mdx')
-    expect(tree.tree[0]!.content).toContain('draft: true')
+    expect(tree.tree[0]!.content).toContain('draft: false')
     expect(tree.tree[0]!.content).toContain("title: 'Hello From Email'")
   })
 

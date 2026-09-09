@@ -18,19 +18,24 @@ Last updated 2026-09-09.
 | Vercel preview on the PR | Passing — a generated post does not break the site build |
 | Email signature stripping | Working — verified in production, [PR #9](https://github.com/your-org/your-blog/pull/9) |
 | MDX escaping | Working — a markdown body is made safe to compile as MDX |
-| Tests | 100 passing |
+| Tests | 103 passing |
 
 Deployed as `post-inbox` at `https://post-inbox.example.workers.dev`,
-version `eb08f0f6` (unchanged — this is a test-only change). Inbound address is `draft@example.com` via Cloudflare
+version `1be1fdbe`. Inbound address is `draft@example.com` via Cloudflare
 Email Routing.
 
 Target repo is `your-org/your-blog`, posts land in `data/blog` as
-`.mdx` with `draft: true`, on a `post-inbox/<date>-<slug>` branch.
+`.mdx` on a `post-inbox/<date>-<slug>` branch. They are committed with
+`draft: false` — see below.
 
 ## Confirmed by building it, not assumed
 
 - **Frontmatter**: single-quoted YAML scalars, `tags` as an array. Matches
   the existing posts.
+- **`draft: true` hides a post from its own preview.** The starter's slug page
+  filters drafts out of `allBlogs` and returns `notFound()`, so the post has no
+  page at all on a Vercel preview — not merely no listing entry. Posts are
+  therefore committed with `draft: false`; the PR is the gate.
 - **`authors` is omitted**, not set. `data/authors/` contains only
   `default.mdx` and no existing post sets `authors:` — emitting an unknown
   author key would reference a nonexistent file and break the build. The
@@ -53,6 +58,10 @@ Target repo is `your-org/your-blog`, posts land in `data/blog` as
   to markdown (`turndown`) is a real feature, not yet built.
 - **Raw HTML in a post body does not render** — a deliberate consequence of
   MDX escaping. See the README.
+- **`POST_AS_DRAFT=true` makes the post 404 on the Vercel preview.** That is
+  the template's behaviour, not a bug here: contentlayer drops drafts from
+  production builds and a preview build is a production build. Left as an
+  option because merging unpublished is a legitimate workflow.
 - **An unbalanced backtick can still produce a body that fails to build.**
 
 `examples/acceptance-test/` is the canonical acceptance test — send that

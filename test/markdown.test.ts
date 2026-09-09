@@ -84,8 +84,14 @@ describe('renderPost', () => {
     author: 'nick@example.com',
   }
 
-  it('always marks the post as a draft', () => {
-    expect(renderPost(base)).toContain('draft: true')
+  it('does not mark the post as a draft by default', () => {
+    // The pull request is the gate; a `draft: true` post 404s on the very
+    // preview deployment meant for reviewing it.
+    expect(renderPost(base)).toContain('draft: false')
+  })
+
+  it('marks the post as a draft when asked', () => {
+    expect(renderPost({ ...base, draft: true })).toContain('draft: true')
   })
 
   it('emits frontmatter in the style the blog already uses', () => {
@@ -96,7 +102,7 @@ describe('renderPost', () => {
         "title: 'Hello World'",
         "date: '2026-09-09'",
         "tags: ['Personal']",
-        'draft: true',
+        'draft: false',
         "summary: 'A summary.'",
         '---',
         '',

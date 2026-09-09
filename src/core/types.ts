@@ -21,6 +21,19 @@ export interface DraftPostRequest {
   authorFile?: string
   tags?: string[]
   summary?: string
+  /**
+   * Value for the post's `draft` frontmatter field.
+   *
+   * Defaults to false. The pull request is already the gate that stops a
+   * post going live, and many site templates — the Tailwind Nextjs Starter
+   * Blog among them — exclude drafts from production builds entirely, which
+   * means a `draft: true` post 404s on the very preview deployment meant for
+   * reviewing it.
+   *
+   * Set it true when you would rather merge the post to the main branch
+   * unpublished and flip the flag in a separate commit later.
+   */
+  draft?: boolean
 }
 
 /** Where and how to commit. Everything site-specific lives here. */

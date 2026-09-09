@@ -32,6 +32,7 @@ export default {
       {
         policy: senderAuthPolicyFromEnv(env),
         stripSignature: env.STRIP_SIGNATURE !== 'false',
+        draft: env.POST_AS_DRAFT === 'true',
       },
     )
 
@@ -134,6 +135,10 @@ function parsePostPayload(
 
   const summary = typeof body.summary === 'string' ? body.summary.trim() : undefined
 
+  if (body.draft !== undefined && typeof body.draft !== 'boolean') {
+    return { error: '`draft` must be a boolean' }
+  }
+
   return {
     request: {
       title,
@@ -142,6 +147,7 @@ function parsePostPayload(
       author: typeof body.author === 'string' ? body.author : 'api',
       ...(tags ? { tags } : {}),
       ...(summary ? { summary } : {}),
+      ...(body.draft === true ? { draft: true } : {}),
     },
   }
 }

@@ -46,7 +46,7 @@ describe('the canonical acceptance test', () => {
     expect(output.startsWith('---\n')).toBe(true)
     expect(output).toContain("title: 'Markdown Acceptance Test'")
     expect(output).toContain("date: '2026-01-15'")
-    expect(output).toContain('draft: true')
+    expect(output).toContain('draft: false')
   })
 
   it('preserves every construct that MDX would otherwise mangle', () => {

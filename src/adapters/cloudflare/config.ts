@@ -40,6 +40,13 @@ export interface Env {
    * default; only the standard `"-- "` delimiter is recognised.
    */
   STRIP_SIGNATURE?: string
+  /**
+   * Set to "true" to commit posts with `draft: true`. Off by default,
+   * because many templates hide drafts from production builds — which
+   * includes Vercel preview deployments, making the post unreviewable.
+   * Turn it on if you would rather merge unpublished and publish later.
+   */
+  POST_AS_DRAFT?: string
 }
 
 /** Fail loudly at request time if a required binding is missing. */

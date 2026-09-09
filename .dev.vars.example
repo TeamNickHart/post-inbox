@@ -22,3 +22,8 @@ REQUIRE_AUTH_RESULTS="true"
 # Set to "false" to keep email signatures in the post body. On by default;
 # only the standard "-- " delimiter is recognised.
 STRIP_SIGNATURE="true"
+
+# Set to "true" to commit posts with `draft: true`. Off by default: many
+# templates hide drafts from production builds, which includes Vercel
+# previews, so a draft post 404s on the preview meant for reviewing it.
+POST_AS_DRAFT="false"
