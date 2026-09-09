@@ -5,7 +5,8 @@ preview, never published directly — triggered either by sending an email
 or by a direct HTTPS POST (e.g. from an iOS/macOS Shortcut). Supports
 multiple sites and multiple users per site.
 
-Status: **planning complete, not yet built.**
+Status: **POC built and working** — both paths verified end to end. See
+`STATUS.md` for what works, what is broken, and what is not built yet.
 
 ---
 
@@ -170,7 +171,7 @@ solving a problem that currently exists.
 ## 8. Open items before/while building
 
 - [ ] Move nickhart.com's repo into the TeamNickHart org
-- [ ] Confirm exact frontmatter schema against real post files
+- [x] Confirm exact frontmatter schema against real post files
 - [ ] Confirm image asset path convention in the Next.js template
 - [ ] Decide GitHub App scopes precisely and install on the org
 - [ ] Design the site/user config format (likely a static config file
@@ -178,9 +179,9 @@ solving a problem that currently exists.
       allowlisted senders per site)
 - [ ] Image processing: evaluate in-Worker WASM vs. GitHub Action once
       ready to build this piece specifically
-- [ ] Choose license (MIT) and add a LICENSE file
-- [ ] Write a README
-- [ ] Confirm no personal config or secrets ever land in git history
+- [x] Choose license (MIT) and add a LICENSE file
+- [x] Write a README
+- [x] Confirm no personal config or secrets ever land in git history
 - [ ] Draft the announcement post — ideally composed *through* the tool
       itself (see Section 9)
 

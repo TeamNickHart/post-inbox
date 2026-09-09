@@ -44,17 +44,17 @@ trivially forgeable. Three checks, all of which must pass:
 3. **SPF/DKIM verdicts** from the receiving mail server, requiring a pass
    from at least one of SPF or DKIM and no DMARC failure.
 
-> **Note on check 3:** Cloudflare Email Routing does not currently stamp
-> usable authentication verdicts on messages delivered to a Worker — the
-> `Authentication-Results` header is absent and `ARC-Authentication-Results`
-> arrives as `arc=none`
-> ([cloudflare/workerd#6740](https://github.com/cloudflare/workerd/issues/6740)).
-> This code **fails closed**: with no verdicts, mail is rejected. If that
-> bites you, set `REQUIRE_AUTH_RESULTS=false`, which drops to checks 1 and
-> 2 only. That is a real downgrade — the subject token becomes the only
-> thing an attacker who forges your address has to guess. It is survivable
-> here because the worst case is an unwanted draft PR, never a published
-> post.
+> **Note on check 3:** this check is known to be fragile on Cloudflare.
+> [cloudflare/workerd#6740](https://github.com/cloudflare/workerd/issues/6740)
+> reports mail reaching an Email Worker with no `Authentication-Results`
+> header and `ARC-Authentication-Results` as `arc=none` — no verdicts at
+> all. In practice, mail sent from Gmail to a Cloudflare Email Routing
+> address *does* arrive with passing verdicts, so the check works. If yours
+> does not, this code **fails closed** and rejects the message rather than
+> waving it through. Setting `REQUIRE_AUTH_RESULTS=false` drops to checks 1
+> and 2 only — a real downgrade, since the subject token becomes the only
+> thing an attacker who forges your address has to guess. Survivable here
+> because the worst case is an unwanted draft PR, never a published post.
 
 Nothing sensitive is committed: all credentials, the sender allowlist, and
 the subject token are Wrangler secrets. See `.dev.vars.example`.
@@ -145,6 +145,8 @@ curl -X POST https://post-inbox.<subdomain>.workers.dev \
 ## Roadmap
 
 **POC (here):** one site, one sender, plaintext body, email + HTTPS paths.
+Known gaps: email signatures are not stripped from the body, and there is no
+way to set tags from an email. See `STATUS.md`.
 
 **MVP:** multi-site and multi-user config, GitHub App instead of a PAT,
 Cloudflare rate limiting, and per-user allowlists.
