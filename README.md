@@ -181,6 +181,12 @@ Two consequences worth knowing:
   backticks makes the code-span detection read the rest of the line as code
   and skip escaping it. Balance your backticks.
 
+`examples/markdown-torture-test.md` exercises every supported feature —
+GFM tables and task lists, math, GitHub-style alerts, code titles, footnotes,
+reference links and prose that merely looks like syntax. Mail it to yourself
+after changing the transformation pipeline; a build failure then points at one
+feature rather than a whole post.
+
 The site repo should also validate this in CI, since a post can reach it
 without going through post-inbox at all — the web editor, or a direct push.
 

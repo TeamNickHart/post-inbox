@@ -14,6 +14,8 @@
  *  - Every other `<` and every `{` `}` is escaped, so MDX treats it as text.
  *  - Code — fenced blocks and inline backticks — is never touched, because
  *    MDX does not parse JSX inside it.
+ *  - Math — `$…$` and `$$…$$` — is never touched either. TeX is full of
+ *    braces, and escaping them turns `\frac{a}{b}` into visible backslashes.
  *
  * **What this gives up:** raw HTML in the body. Markdown permits
  * `<b>bold</b>`, and after this it renders as visible angle brackets instead
@@ -30,7 +32,8 @@
  * existing markdown links. Splitting on this pattern puts them at odd
  * indices, so only the even (prose) parts get transformed.
  */
-const PROTECTED = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|!?\[[^\]]*\]\([^)]*\))/g
+const PROTECTED =
+  /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|!?\[[^\]]*\]\([^)]*\))/g
 
 /** An `<https://…>` or `<mailto:…>` autolink. */
 const URL_AUTOLINK = /<((?:https?|mailto):[^>\s]+)>/g

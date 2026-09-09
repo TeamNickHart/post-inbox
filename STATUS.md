@@ -18,10 +18,10 @@ Last updated 2026-09-09.
 | Vercel preview on the PR | Passing — a generated post does not break the site build |
 | Email signature stripping | Working — verified in production, [PR #9](https://github.com/your-org/your-blog/pull/9) |
 | MDX escaping | Working — a markdown body is made safe to compile as MDX |
-| Tests | 92 passing |
+| Tests | 95 passing |
 
 Deployed as `post-inbox` at `https://post-inbox.example.workers.dev`,
-version `87c400ab`. Inbound address is `draft@example.com` via Cloudflare
+version `eb08f0f6`. Inbound address is `draft@example.com` via Cloudflare
 Email Routing.
 
 Target repo is `your-org/your-blog`, posts land in `data/blog` as
@@ -54,6 +54,9 @@ Target repo is `your-org/your-blog`, posts land in `data/blog` as
 - **Raw HTML in a post body does not render** — a deliberate consequence of
   MDX escaping. See the README.
 - **An unbalanced backtick can still produce a body that fails to build.**
+
+`examples/markdown-torture-test.md` exercises every supported markdown
+feature. Mail it to yourself after changing the transformation pipeline.
 - **Test PRs #7, #8 and #9 are open** on the blog repo, with branches.
 
 ## Not built yet

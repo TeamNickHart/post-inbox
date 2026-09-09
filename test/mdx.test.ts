@@ -62,6 +62,18 @@ describe('makeMdxSafe — what must not be touched', () => {
     expect(safe(input)).toBe(input)
   })
 
+  it('leaves inline math alone', () => {
+    // TeX is full of braces; escaping them renders visible backslashes.
+    expect(safe('Inline $E = mc^2$ and $\\alpha + \\beta$ here')).toBe(
+      'Inline $E = mc^2$ and $\\alpha + \\beta$ here',
+    )
+  })
+
+  it('leaves a display math block alone', () => {
+    const input = '$$\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$'
+    expect(safe(input)).toBe(input)
+  })
+
   it('leaves existing markdown links alone', () => {
     const input = 'A [link](https://example.com) here'
     expect(safe(input)).toBe(input)

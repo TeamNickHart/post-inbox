@@ -63,6 +63,13 @@ describe('linkifyBareUrls', () => {
     )
   })
 
+  it('does not rewrite a reference-link definition', () => {
+    // `[ref]: https://…` must stay bare; wrapping it breaks every reference
+    // that points at it.
+    const input = 'See [the docs][ref].\n\n[ref]: https://example.com'
+    expect(linkifyBareUrls(input)).toBe(input)
+  })
+
   it('leaves the image url in a markdown image alone', () => {
     const input = '![alt](https://example.com/a.png)'
     expect(linkifyBareUrls(input)).toBe(input)

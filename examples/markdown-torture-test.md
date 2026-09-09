@@ -1,0 +1,147 @@
+<!--
+Every markdown feature the blog supports, in one post. Mail the body of this
+file to yourself to check that a change to the transformation pipeline did not
+break something — a build failure then points at one feature rather than a
+whole post.
+
+Covers plain markdown plus what the site's MDX config enables: remark-gfm
+(tables, task lists, strikethrough, footnotes), remark-math + KaTeX,
+remark-github-blockquote-alert, and remark-code-titles.
+
+Verified to compile with @mdx-js/mdx v3 after passing through renderPost.
+-->
+
+This post exercises every markdown feature the blog supports, so a build
+failure points at one thing rather than a whole post.
+
+## Emphasis and inline
+
+**Bold**, *italic*, ***both***, ~~struck through~~, `inline code`, and a
+line break at the end of this line.\
+That was a hard break.
+
+## Links
+
+An inline [link](https://example.com), a [link with a title](https://example.com "Hover me"),
+a reference [link][ref], and a bare URL: https://example.com
+
+An autolink in angle brackets: <https://jennyweis.com>
+An email in angle brackets: <nick@example.com>
+
+[ref]: https://example.com
+
+## Lists
+
+- Unordered item
+- Another, with **bold** inside
+  - Nested one level
+    - And two
+- [ ] An unchecked task
+- [x] A checked task
+
+1. Ordered item
+2. Second
+   1. Nested ordered
+10. Numbering need not be sequential
+
+Term-style list:
+
+- **Sender allowlist** — the envelope address must match.
+- **Subject token** — a shared secret, only when needed.
+
+## Quotes and alerts
+
+> A plain blockquote.
+>
+> With a second paragraph, and a [link](https://example.com).
+
+> [!NOTE]
+> A GitHub-style note alert.
+
+> [!WARNING]
+> A warning alert.
+
+> [!TIP]
+> A tip alert.
+
+## Code
+
+Inline code with MDX-hostile contents: `if (x < 5) { go() }` and `<https://x.com>`.
+
+```js
+// A fenced block with a language
+const config = { owner: 'TeamNickHart', repo: 'your-blog' }
+if (config.owner.length < 20) console.log(`<ok>`)
+```
+
+```js:wrangler.config.js
+// A fenced block with a code title, via remark-code-titles
+export default { name: 'post-inbox' }
+```
+
+```
+A fence with no language at all.
+5 < 10 && {braces} stay literal here.
+```
+
+## Tables
+
+| Check | Required when | Notes |
+| ----- | ------------- | ----- |
+| SPF/DKIM | always | unless disabled |
+| Subject token | verdicts absent | `[token]` in subject |
+| Bearer token | HTTPS path only | 401 without it |
+
+Alignment:
+
+| Left | Center | Right |
+| :--- | :----: | ----: |
+| a | b | 1 |
+| longer cell | mid | 42 |
+
+## Math
+
+Inline math: $E = mc^2$ and $\alpha + \beta$.
+
+A display block:
+
+$$
+\sum_{i=1}^{n} i = \frac{n(n+1)}{2}
+$$
+
+## Prose that looks like syntax
+
+Comparisons: 5 < 10, 10 > 5, and x <5 with no space.
+Generics in prose: an Array<int> and a Map<string, number>.
+An arrow drawn as <- and one as ->.
+Braces in prose: the {maybe} case, and a lone { too.
+An ampersand & a semicolon; plus &amp; written out.
+
+## Typography
+
+An em-dash — an en-dash –, an ellipsis…, "smart quotes", 'single quotes',
+and unicode: café, naïve, 日本語, emoji 🎉, symbols © ® ™ ° ± ×.
+
+## Footnotes
+
+A claim needing a source[^1], and another[^note].
+
+[^1]: The first footnote.
+[^note]: A named footnote, with a [link](https://example.com).
+
+## Horizontal rules
+
+---
+
+***
+
+## Headings
+
+# H1
+## H2
+### H3
+#### H4
+##### H5
+###### H6
+
+That is everything.

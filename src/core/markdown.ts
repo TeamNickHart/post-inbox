@@ -45,15 +45,16 @@ function yamlString(value: string): string {
  * Wrap bare URLs in markdown link syntax.
  *
  * Skips URLs that are already part of a `[text](url)` or `<url>`
- * construct, and URLs inside fenced or inline code, so markdown the
- * author deliberately wrote is never rewritten.
+ * construct, URLs inside fenced or inline code, and the target of a
+ * reference-link definition (`[ref]: https://…`) — rewriting that last one
+ * breaks every reference pointing at it.
  */
 export function linkifyBareUrls(body: string): string {
   // Split on the constructs we must leave alone. Because the pattern is
   // fully parenthesized, the delimiters are preserved in the output
   // array at odd indices — we only transform the even (plain-text) ones.
   const protectedPattern =
-    /(```[\s\S]*?```|`[^`\n]*`|!?\[[^\]]*\]\([^)]*\)|<https?:\/\/[^>\s]+>)/g
+    /(```[\s\S]*?```|`[^`\n]*`|!?\[[^\]]*\]\([^)]*\)|<https?:\/\/[^>\s]+>|^[ \t]*\[[^\]]+\]:[ \t]*\S+)/gm
   const parts = body.split(protectedPattern)
 
   return parts
