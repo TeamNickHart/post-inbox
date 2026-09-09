@@ -160,6 +160,30 @@ curl -X POST https://post-inbox.<subdomain>.workers.dev \
 
 `title` and `body` are required; `date`, `tags`, and `summary` are optional.
 
+### Markdown, and what MDX does to it
+
+Posts are committed as `.mdx`, but what you write in an email is markdown.
+MDX reads `<` as the start of a JSX tag and `{` as a JavaScript expression, so
+prose like `Array<int>`, `x <5`, or `{maybe}` is a **build error**, not text —
+a `<https://example.com>` autolink is enough to fail the site build.
+
+So `<`, `{` and `}` are escaped before committing, and `<url>` / `<user@host>`
+autolinks are converted to real markdown links. Code — fenced blocks and
+inline backticks — is left alone, and so is ordinary prose: headings, lists,
+tables, emphasis, task lists, footnotes, quotes and unicode all pass through
+untouched.
+
+Two consequences worth knowing:
+
+- **Raw HTML in the body will not render.** `<b>bold</b>` comes out as visible
+  angle brackets. Use `**bold**`.
+- **An unbalanced backtick can still break the build.** An odd number of
+  backticks makes the code-span detection read the rest of the line as code
+  and skip escaping it. Balance your backticks.
+
+The site repo should also validate this in CI, since a post can reach it
+without going through post-inbox at all — the web editor, or a direct push.
+
 ### Email signatures
 
 A signature delimited by the standard `-- ` line is stripped from the body.

@@ -17,10 +17,11 @@ Last updated 2026-09-09.
 | Bearer-token auth on HTTPS | Working — 401 with no token, wrong token, and 405 on GET |
 | Vercel preview on the PR | Passing — a generated post does not break the site build |
 | Email signature stripping | Working — verified in production, [PR #9](https://github.com/your-org/your-blog/pull/9) |
-| Tests | 75 passing |
+| MDX escaping | Working — a markdown body is made safe to compile as MDX |
+| Tests | 92 passing |
 
 Deployed as `post-inbox` at `https://post-inbox.example.workers.dev`,
-version `606b4c2d`. Inbound address is `draft@example.com` via Cloudflare
+version `87c400ab`. Inbound address is `draft@example.com` via Cloudflare
 Email Routing.
 
 Target repo is `your-org/your-blog`, posts land in `data/blog` as
@@ -46,11 +47,24 @@ Target repo is `your-org/your-blog`, posts land in `data/blog` as
 - **No way to set tags from an email.** Posts arrive with `tags: []` and need
   manual editing. Undecided between a `Tags:` line in the body and trailing
   hashtags.
+- **HTML-only email is rejected** with the same generic bounce as a security
+  failure, so the reason is invisible to the sender. Most clients send a
+  plaintext part alongside the HTML, so this is an edge case. Converting HTML
+  to markdown (`turndown`) is a real feature, not yet built.
+- **Raw HTML in a post body does not render** — a deliberate consequence of
+  MDX escaping. See the README.
+- **An unbalanced backtick can still produce a body that fails to build.**
 - **Test PRs #7, #8 and #9 are open** on the blog repo, with branches.
 
 ## Not built yet
 
 Scoped out of the POC deliberately — see `post-inbox-design.md`.
+
+**Blog-repo CI (separate task):** a shared reusable GitHub Actions workflow
+across all three site repos — MDX compile check and frontmatter validation as
+blocking checks, tag linting and spellcheck as advisory. Needed because a post
+can reach a repo without passing through post-inbox. See §11 of the design
+doc.
 
 **MVP:** multi-site and multi-user config (users × sites, token hashes not
 plaintext, per-user author mapping), a GitHub App instead of a fine-grained

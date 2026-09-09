@@ -1,3 +1,4 @@
+import { makeMdxSafe } from './mdx.ts'
 import type { DraftPostRequest } from './types.ts'
 
 /**
@@ -98,6 +99,8 @@ export function renderPost(request: DraftPostRequest): string {
   }
   lines.push('---', '')
 
-  const body = linkifyBareUrls(request.body.trim())
+  // Escaping runs last: `linkifyBareUrls` produces markdown links, which
+  // `makeMdxSafe` treats as protected regions and leaves alone.
+  const body = makeMdxSafe(linkifyBareUrls(request.body.trim())).text
   return `${lines.join('\n')}\n${body}\n`
 }
