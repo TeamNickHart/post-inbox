@@ -16,11 +16,11 @@ Last updated 2026-09-09.
 | SPF/DKIM verdict check | Working — Gmail-sent mail arrives with passing verdicts |
 | Bearer-token auth on HTTPS | Working — 401 with no token, wrong token, and 405 on GET |
 | Vercel preview on the PR | Passing — a generated post does not break the site build |
-| Email signature stripping | Working — configurable via `STRIP_SIGNATURE` |
+| Email signature stripping | Working — verified in production, [PR #9](https://github.com/your-org/your-blog/pull/9) |
 | Tests | 56 passing |
 
 Deployed as `post-inbox` at `https://post-inbox.example.workers.dev`,
-version `3efe93c2`. Inbound address is `draft@example.com` via Cloudflare
+version `32952d03`. Inbound address is `draft@example.com` via Cloudflare
 Email Routing.
 
 Target repo is `your-org/your-blog`, posts land in `data/blog` as
@@ -46,7 +46,7 @@ Target repo is `your-org/your-blog`, posts land in `data/blog` as
 - **No way to set tags from an email.** Posts arrive with `tags: []` and need
   manual editing. Undecided between a `Tags:` line in the body and trailing
   hashtags.
-- **Test PRs #7 and #8 are open** on the blog repo, with branches.
+- **Test PRs #7, #8 and #9 are open** on the blog repo, with branches.
 
 ## Not built yet
 
