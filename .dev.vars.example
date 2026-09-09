@@ -1,0 +1,19 @@
+# Copy to `.dev.vars` for local `wrangler dev`. `.dev.vars` is gitignored.
+# In production these are set with `wrangler secret put <NAME>` instead.
+
+# GitHub App installation token, or a fine-grained PAT for local testing.
+# Needs Contents: read/write and Pull requests: read/write on the target repo.
+GITHUB_TOKEN="ghp_replace_me"
+
+# Shared secret that must appear in the email subject as [token].
+EMAIL_SUBJECT_TOKEN="replace-with-a-long-random-string"
+
+# Comma-separated envelope sender addresses permitted to create posts.
+ALLOWED_SENDERS="you@example.com"
+
+# Bearer token for the HTTPS POST path.
+API_TOKEN="replace-with-a-long-random-string"
+
+# Set to "false" only if your mail platform does not stamp SPF/DKIM results.
+# Leaving it unset (or "true") fails closed, which is what you want.
+REQUIRE_AUTH_RESULTS="true"
