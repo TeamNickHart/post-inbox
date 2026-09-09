@@ -149,6 +149,26 @@ Bare URLs like https://example.com get wrapped into links.
 If your mail does not carry passing SPF/DKIM verdicts, add the shared secret
 in brackets — `Subject: My New Post [your-subject-token]`.
 
+#### Tags and summary
+
+Set frontmatter the subject line cannot carry with a `Key: value` block at the
+very top of the body:
+
+```
+Tags: Coding, iOS, job application
+Summary: What I learned shipping this.
+
+The post body starts here.
+```
+
+Only `Tags` and `Summary` are recognised, and only as a contiguous block at the
+start — the first line that is not one of them ends the block, so prose
+containing a colon is never mistaken for metadata. An unrecognised key is left
+in the body rather than silently dropped.
+
+Tags split on commas only, so a tag may contain spaces (`job application`), and
+case is preserved (`IKEA`, `SwiftLint`) to match the tags a site already uses.
+
 ### By HTTPS
 
 ```bash

@@ -18,10 +18,11 @@ Last updated 2026-09-09.
 | Vercel preview on the PR | Passing — a generated post does not break the site build |
 | Email signature stripping | Working — verified in production, [PR #9](https://github.com/your-org/your-blog/pull/9) |
 | MDX escaping | Working — a markdown body is made safe to compile as MDX |
-| Tests | 103 passing |
+| Tags and summary from email | Working — a `Tags:`/`Summary:` block at the top of the body |
+| Tests | 124 passing |
 
 Deployed as `post-inbox` at `https://post-inbox.example.workers.dev`,
-version `1be1fdbe`. Inbound address is `draft@example.com` via Cloudflare
+version `cb312234`. Inbound address is `draft@example.com` via Cloudflare
 Email Routing.
 
 Target repo is `your-org/your-blog`, posts land in `data/blog` as
@@ -49,9 +50,6 @@ Target repo is `your-org/your-blog`, posts land in `data/blog` as
 
 ## Known issues
 
-- **No way to set tags from an email.** Posts arrive with `tags: []` and need
-  manual editing. Undecided between a `Tags:` line in the body and trailing
-  hashtags.
 - **HTML-only email is rejected** with the same generic bounce as a security
   failure, so the reason is invisible to the sender. Most clients send a
   plaintext part alongside the HTML, so this is an edge case. Converting HTML

@@ -1,3 +1,4 @@
+import { parseHeaders } from './headers.ts'
 import { authenticateSender, extractSubjectToken, type SenderAuthPolicy } from './senderAuth.ts'
 import { stripSignature } from './signature.ts'
 import type { DraftPostRequest } from './types.ts'
@@ -74,8 +75,13 @@ export function emailToPost(
   const raw = email.text?.trim()
   if (!raw) return { ok: false, reason: 'no plaintext body' }
 
-  const body = (options.stripSignature === false ? raw : stripSignature(raw)).trim()
-  if (!body) return { ok: false, reason: 'body was empty after stripping the signature' }
+  const stripped = (options.stripSignature === false ? raw : stripSignature(raw)).trim()
+  if (!stripped) return { ok: false, reason: 'body was empty after stripping the signature' }
+
+  // Metadata the subject line cannot carry: `Tags:` and `Summary:` lines at
+  // the top of the body.
+  const { tags, summary, body } = parseHeaders(stripped)
+  if (!body) return { ok: false, reason: 'body was empty after removing the header block' }
 
   return {
     ok: true,
@@ -83,6 +89,8 @@ export function emailToPost(
     request: {
       title,
       body,
+      ...(tags ? { tags } : {}),
+      ...(summary ? { summary } : {}),
       date: email.date ?? (options.now ?? (() => new Date()))(),
       author: auth.sender,
       draft: options.draft === true,

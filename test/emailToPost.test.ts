@@ -47,6 +47,33 @@ describe('emailToPost — the genuine case', () => {
   })
 })
 
+describe('emailToPost — metadata headers', () => {
+  it('reads tags and summary from the top of the body', () => {
+    const result = emailToPost(
+      genuine({ text: 'Tags: Coding, iOS\nSummary: A summary.\n\nThe body.\n\n-- \nSig\n' }),
+      options,
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.request.tags).toEqual(['Coding', 'iOS'])
+      expect(result.request.summary).toBe('A summary.')
+      expect(result.request.body).toBe('The body.')
+    }
+  })
+
+  it('leaves tags unset when the body has no header block', () => {
+    const result = emailToPost(genuine(), options)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.request.tags).toBeUndefined()
+  })
+
+  it('rejects a message whose body is only a header block', () => {
+    const result = emailToPost(genuine({ text: 'Tags: AI\n' }), options)
+    expect(result).toMatchObject({ ok: false })
+    if (!result.ok) expect(result.reason).toMatch(/header block/)
+  })
+})
+
 describe('emailToPost — a forged sender', () => {
   // Every case below claims to be nickhart@gmail.com but carries no valid
   // subject token, because an attacker does not have it. What separates
