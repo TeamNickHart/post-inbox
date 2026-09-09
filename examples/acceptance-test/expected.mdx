@@ -1,15 +1,9 @@
-<!--
-Every markdown feature the blog supports, in one post. Mail the body of this
-file to yourself to check that a change to the transformation pipeline did not
-break something — a build failure then points at one feature rather than a
-whole post.
-
-Covers plain markdown plus what the site's MDX config enables: remark-gfm
-(tables, task lists, strikethrough, footnotes), remark-math + KaTeX,
-remark-github-blockquote-alert, and remark-code-titles.
-
-Verified to compile with @mdx-js/mdx v3 after passing through renderPost.
--->
+---
+title: 'Markdown Acceptance Test'
+date: '2026-01-15'
+tags: []
+draft: true
+---
 
 This post exercises every markdown feature the blog supports, so a build
 failure points at one thing rather than a whole post.
@@ -23,10 +17,10 @@ That was a hard break.
 ## Links
 
 An inline [link](https://example.com), a [link with a title](https://example.com "Hover me"),
-a reference [link][ref], and a bare URL: https://example.com
+a reference [link][ref], and a bare URL: [https://example.com](https://example.com)
 
-An autolink in angle brackets: <https://jennyweis.com>
-An email in angle brackets: <nick@example.com>
+An autolink in angle brackets: [https://jennyweis.com](https://jennyweis.com)
+An email in angle brackets: [nick@example.com](mailto:nick@example.com)
 
 [ref]: https://example.com
 
@@ -111,10 +105,10 @@ $$
 
 ## Prose that looks like syntax
 
-Comparisons: 5 < 10, 10 > 5, and x <5 with no space.
-Generics in prose: an Array<int> and a Map<string, number>.
-An arrow drawn as <- and one as ->.
-Braces in prose: the {maybe} case, and a lone { too.
+Comparisons: 5 \< 10, 10 > 5, and x \<5 with no space.
+Generics in prose: an Array\<int> and a Map\<string, number>.
+An arrow drawn as \<- and one as ->.
+Braces in prose: the \{maybe\} case, and a lone \{ too.
 An ampersand & a semicolon; plus &amp; written out.
 
 ## Typography

@@ -181,11 +181,16 @@ Two consequences worth knowing:
   backticks makes the code-span detection read the rest of the line as code
   and skip escaping it. Balance your backticks.
 
-`examples/markdown-torture-test.md` exercises every supported feature —
-GFM tables and task lists, math, GitHub-style alerts, code titles, footnotes,
-reference links and prose that merely looks like syntax. Mail it to yourself
-after changing the transformation pipeline; a build failure then points at one
-feature rather than a whole post.
+### Acceptance test
+
+`examples/acceptance-test/` is the canonical check: **send that email, get a
+draft PR that builds.** Its `body.md` exercises every supported feature, and
+`expected.mdx` records exactly what the pipeline should produce — `pnpm test`
+diffs against it, so most regressions are caught without sending anything.
+
+Run the email version after changing the transformation, upgrading the site
+template, or setting this up for a new site. See
+`examples/acceptance-test/README.md`.
 
 The site repo should also validate this in CI, since a post can reach it
 without going through post-inbox at all — the web editor, or a direct push.
