@@ -45,7 +45,9 @@ export class GitHubClient {
   constructor(options: GitHubClientOptions) {
     this.#token = options.token
     this.#userAgent = options.userAgent ?? 'post-inbox'
-    this.#fetch = options.fetch ?? fetch
+    // Bind to globalThis: the Workers runtime rejects a detached native
+    // `fetch` called as a method with a TypeError ("Illegal invocation").
+    this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis)
   }
 
   async #request<T>(method: string, path: string, body?: unknown): Promise<T> {
