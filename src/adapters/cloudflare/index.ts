@@ -2,6 +2,7 @@ import PostalMime from 'postal-mime'
 import { createDraftPost } from '../../core/createDraftPost.ts'
 import { GitHubClient } from '../../core/github.ts'
 import { authenticateSender, extractSubjectToken } from '../../core/senderAuth.ts'
+import { stripSignature } from '../../core/signature.ts'
 import type { DraftPostRequest } from '../../core/types.ts'
 import { senderAuthPolicyFromEnv, siteConfigFromEnv, type Env } from './config.ts'
 
@@ -46,7 +47,9 @@ export default {
 
     // Plaintext only for now, per the POC scope. `email.text` is absent
     // for HTML-only mail, which we do not attempt to convert.
-    const body = email.text?.trim()
+    const rawBody = email.text?.trim()
+    const body =
+      rawBody && env.STRIP_SIGNATURE !== 'false' ? stripSignature(rawBody).trim() : rawBody
     if (!body) {
       console.error('Rejected inbound email: no plaintext body')
       message.setReject('Message rejected')

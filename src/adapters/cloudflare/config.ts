@@ -32,6 +32,11 @@ export interface Env {
    * results. Deliberate downgrade — see senderAuth.ts.
    */
   REQUIRE_AUTH_RESULTS?: string
+  /**
+   * Set to "false" to keep email signatures in the post body. On by
+   * default; only the standard `"-- "` delimiter is recognised.
+   */
+  STRIP_SIGNATURE?: string
 }
 
 /** Fail loudly at request time if a required binding is missing. */

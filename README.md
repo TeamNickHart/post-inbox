@@ -142,11 +142,21 @@ curl -X POST https://post-inbox.<subdomain>.workers.dev \
 
 `title` and `body` are required; `date`, `tags`, and `summary` are optional.
 
+### Email signatures
+
+A signature delimited by the standard `-- ` line is stripped from the body.
+Only that delimiter is recognised — nothing tries to guess at signatures by
+shape, because a wrong guess eats part of your post. If yours does not
+conform, set `STRIP_SIGNATURE=false` and trim it yourself:
+
+```bash
+npx wrangler secret put STRIP_SIGNATURE   # or set it in wrangler.jsonc vars
+```
+
 ## Roadmap
 
 **POC (here):** one site, one sender, plaintext body, email + HTTPS paths.
-Known gaps: email signatures are not stripped from the body, and there is no
-way to set tags from an email. See `STATUS.md`.
+Known gap: there is no way to set tags from an email. See `STATUS.md`.
 
 **MVP:** multi-site and multi-user config, GitHub App instead of a PAT,
 Cloudflare rate limiting, and per-user allowlists.

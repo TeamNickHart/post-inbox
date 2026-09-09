@@ -17,3 +17,7 @@ API_TOKEN="replace-with-a-long-random-string"
 # Set to "false" only if your mail platform does not stamp SPF/DKIM results.
 # Leaving it unset (or "true") fails closed, which is what you want.
 REQUIRE_AUTH_RESULTS="true"
+
+# Set to "false" to keep email signatures in the post body. On by default;
+# only the standard "-- " delimiter is recognised.
+STRIP_SIGNATURE="true"
