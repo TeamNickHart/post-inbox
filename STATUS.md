@@ -3,7 +3,7 @@
 **Working end to end on three real sites.** Email a site's address, get a pull
 request with a building preview.
 
-Last updated 2026-09-10. Worker version `2ea06cad`, 168 tests passing.
+Last updated 2026-09-10. Worker version `2ea06cad`, 170 tests passing.
 
 ## What works
 
@@ -83,6 +83,11 @@ draft PR that builds.** `pnpm test` diffs the pipeline against the recorded
 Its README insists on looking at the *rendered* preview, not just a green
 build. Mangled TeX compiles fine and renders as gibberish — which is the bug
 writing that test uncovered.
+
+`examples/acceptance-test/rejections/` covers the other half: how a message is
+turned away, and what the sender should see. The exact sender-facing text is
+asserted against what those docs promise, so a message cannot be reworded
+without the documentation failing the build.
 
 ## Known gaps
 

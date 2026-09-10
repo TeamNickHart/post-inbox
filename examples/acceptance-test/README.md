@@ -16,6 +16,11 @@ the site template, or setting the tool up for a new site.
 | `body.md` | The email body to send. Mail it verbatim — no wrapper, no edits. |
 | `expected.mdx` | Exactly what the pipeline should commit. Diffed by `pnpm test`. |
 
+[`rejections/`](rejections/) covers the other half: the ways a message is
+*turned away*, and what the sender should see. A bounce is the only feedback a
+sender gets, so a rejection that says nothing useful is indistinguishable from
+the system being broken.
+
 `body.md` exercises every markdown feature the site's MDX config supports:
 plain markdown, GFM (tables with alignment, task lists, strikethrough,
 footnotes), math via KaTeX, GitHub-style alerts, code titles, reference links,

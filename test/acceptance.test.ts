@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { emailToPost } from '../src/core/emailToPost.ts'
 import { renderPost } from '../src/core/markdown.ts'
 
 /**
@@ -84,5 +85,41 @@ describe('the canonical acceptance test', () => {
     expect(output).toContain('[nick@example.com](mailto:nick@example.com)')
     // No angle-bracket autolink may survive outside code.
     expect(output).not.toMatch(/[^`]<https?:\/\//)
+  })
+})
+
+describe('the documented rejection cases', () => {
+  // `examples/acceptance-test/rejections/` tells a reader what bounce to
+  // expect. Documentation that has drifted from the code is worse than none,
+  // because someone will trust it while debugging — so the exact text a
+  // sender sees is asserted against what the docs promise.
+  const htmlOnlyDoc = readFileSync(`${dir}rejections/html-only.md`, 'utf8')
+
+  it('quotes the real sender message for an html-only rejection', () => {
+    const result = emailToPost(
+      {
+        envelopeFrom: 'a@example.com',
+        subject: 'A Post',
+        authenticationResults: 'spf=pass; dkim=pass; dmarc=pass',
+        text: null,
+        date: new Date('2026-01-15T12:00:00Z'),
+      },
+      { policy: { allowedSenders: ['a@example.com'], subjectToken: '' } },
+    )
+
+    expect(result).toMatchObject({ ok: false, kind: 'content' })
+    if (result.ok || !result.senderMessage) throw new Error('expected a content rejection')
+
+    // The doc wraps its quoted message across lines; compare on collapsed
+    // whitespace so formatting is not what breaks this.
+    const collapse = (text: string) => text.replace(/\s+/g, ' ')
+    expect(collapse(htmlOnlyDoc)).toContain(collapse(result.senderMessage))
+  })
+
+  it('lists every case the rejections README claims to cover', () => {
+    const readme = readFileSync(`${dir}rejections/README.md`, 'utf8')
+    for (const claim of ['html-only', 'Not allowlisted', 'Wrong subject token', 'No title']) {
+      expect(readme).toContain(claim)
+    }
   })
 })
