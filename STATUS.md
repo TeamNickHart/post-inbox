@@ -149,34 +149,48 @@ which matters once someone else's post is being committed.
   build finishes — "preview ready: <url>" — but something has to notice that,
   which means CI or a Vercel webhook rather than the Worker.
 
-- **Reply-to-edit: revise a post by replying to the confirmation.** The most
-  interesting of these and the least designed. Replying with corrections is a
-  far better editing loop than opening a PR in a browser.
+- **Reply to append: add to a post by replying to the confirmation.**
+  Replying with the images or tags you forgot is a far better loop than opening
+  a PR in a browser.
 
-  What makes it tractable: an email reply carries `In-Reply-To` and
-  `References` headers naming the `Message-ID` of the message being replied
-  to. So the confirmation reply's own `Message-ID` is the tracking token — no
-  need to put a sha or PR number in the body where a person might mangle it,
-  though a visible `PR #12` is a useful human-readable fallback if the headers
-  are lost.
+  **Scope: additive only.** A reply appends body text, adds tags, or adds
+  attachments. It never rewrites or deletes anything. A destructive syntax could
+  come later, but deliberately not first — and narrowing to append removes the
+  hardest problem rather than working around it:
 
-  The unsolved parts, roughly in order of difficulty:
+  - *No intent parsing.* "Change the title to X" needs interpretation and can
+    go wrong destructively. "Here are the images I forgot" has one meaning.
+  - *Quoted text stops being dangerous.* With wholesale replacement, failing to
+    strip a quoted block corrupts the post. With append, a stray quote is
+    visible noise at the bottom of a diff you are already reviewing.
+  - *A duplicate reply is visible, not silent.* It adds a duplicate section you
+    can see and delete, rather than overwriting something.
+
+  What makes the plumbing tractable: an email reply already carries
+  `In-Reply-To` and `References` naming the `Message-ID` it replies to. So the
+  confirmation's own `Message-ID` is the tracking token — nothing needs to
+  survive in the body where a mail client might mangle it, though a visible
+  `PR #12` is a useful human-readable fallback.
+
+  Still to decide when building it:
   - **Storing the mapping.** `Message-ID` → site + PR number + branch has to
-    persist between two separate Worker invocations. Cloudflare KV is the
-    natural fit; it is the first piece of state this system would own, which
-    is a real change to its shape.
-  - **What an edit means.** Replace the body wholesale, or apply the reply as
-    a patch? Wholesale is predictable and easy to reason about; patching is
-    what someone actually wants when they write "change the title to X".
-  - **Quoted text.** A reply usually quotes the original, so the quoted block
-    has to be stripped — the same class of problem as signature stripping, but
-    with far less standardisation than `-- `.
+    persist across two Worker invocations. Cloudflare KV is the natural fit, and
+    it would be the first state this system owns — a real change to its shape.
+  - **Where appended content lands.** If the post already ends with an "Images"
+    section, does a second batch join it or start a new one? Joining is tidier;
+    starting fresh is more predictable and simpler. Predictable probably wins.
+  - **Tags are a merge, not an append.** A `Tags:` line in a reply means "add
+    these to the existing list", which edits frontmatter rather than appending
+    to the body — a different code path, reusing the case-insensitive
+    de-duplication already in `parseHeaders`.
   - **Commit onto the existing branch**, rather than opening a second PR.
-    `createDraftPost` currently always cuts a new branch, so this needs a
-    revise path alongside it.
-  - **Authentication still applies.** A reply is a fresh inbound message and
-    must pass the same allowlist and DKIM checks; knowing a `Message-ID` must
-    not be sufficient to edit a post.
+    `createDraftPost` always cuts a new branch, so this needs a revise path
+    alongside it.
+  - **Authentication still applies in full.** A reply is a fresh inbound
+    message and must pass the same allowlist and DKIM checks. Knowing a
+    `Message-ID` must never be sufficient to change a post.
+  - **Attachments are a prerequisite** for the case that motivates this most —
+    forgotten images. See the attachments item below.
 
 - **Make a failure bounce say why, when authentication succeeded.** A GitHub
   failure already rejects the message rather than dropping it, so a bounce
