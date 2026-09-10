@@ -293,6 +293,36 @@ unpublished and flip the flag in a separate commit later. Expect the preview to
 404 in that case; check the diff instead. The HTTPS path can also pass
 `"draft": true` per request.
 
+### Several authors on one site
+
+A site with more than one writer can attribute posts by sender. Map each
+envelope address to a file in that site's `data/authors` directory:
+
+```jsonc
+"authorsBySender": {
+  "someone@example.com": "someone",
+  "someone-else@example.com": "someone-else"
+}
+```
+
+The value is a bare basename — no directory, no `.mdx`. Anyone unlisted posts
+under the site's own default author, because no `authors` field is emitted at
+all.
+
+**The file has to exist.** Frontmatter naming an author with no matching file
+breaks the site build, so a typo here is a broken deploy rather than a cosmetic
+mistake. `sites.jsonc` is validated for shape on every build; to check the files
+themselves:
+
+```bash
+pnpm check:authors
+```
+
+On the email path the address is the DKIM-verified envelope sender, so
+attribution is as trustworthy as the authentication. On the HTTPS path the
+`author` field is a claim — the bearer token authorises the request, and nothing
+verifies who is named.
+
 ### What a bounce tells you
 
 A rejected message comes back as an SMTP rejection, which your mail server turns

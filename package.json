@@ -21,7 +21,8 @@
     "check:secrets": "node scripts/check-no-secrets.mjs",
     "verify": "pnpm check:secrets && pnpm typecheck && pnpm test",
     "configure": "node scripts/configure.mjs",
-    "configure:site": "node scripts/configure-site.mjs"
+    "configure:site": "node scripts/configure-site.mjs",
+    "check:authors": "node scripts/check-authors.mjs"
   },
   "dependencies": {
     "postal-mime": "^2.4.4"

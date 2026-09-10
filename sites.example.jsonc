@@ -35,10 +35,15 @@
 
       // Optional, for a site with several authors: map an envelope address to
       // a file in the site's `data/authors` directory. Anyone unlisted posts
-      // under the site's default author.
+      // under the site's own default author.
+      //
+      // The value is a bare basename — no directory, no `.mdx`. It must match
+      // a file that exists: frontmatter naming a missing author breaks the
+      // site build. Run `pnpm check:authors` after editing this.
       //
       // "authorsBySender": {
-      //   "someone@example.com": "someone"
+      //   "someone@example.com": "someone",
+      //   "someone-else@example.com": "someone-else"
       // }
     }
   ]

@@ -3,7 +3,7 @@
 **Working end to end on three real sites.** Email a site's address, get a pull
 request with a building preview.
 
-Last updated 2026-09-10. Worker version `2ea06cad`, 170 tests passing.
+Last updated 2026-09-10. Worker version `77cd627b`, 180 tests passing.
 
 ## What works
 
@@ -22,6 +22,7 @@ Last updated 2026-09-10. Worker version `2ea06cad`, 170 tests passing.
 | Guided setup | `pnpm configure`, `pnpm configure:site <key>` |
 | Per-site GitHub and subject tokens | Resolved per site, falling back to the global value |
 | Bounce messages | Generic for auth failures, specific once the sender is authenticated |
+| Per-sender author mapping | Resolved on both paths, validated, `pnpm check:authors` |
 
 Three sites configured, each with its own inbound address, sender allowlist and
 API token. One GitHub token covers all three, scoped to the org.
@@ -116,6 +117,12 @@ which matters once someone else's post is being committed.
 
 **Hash the per-site API tokens** rather than comparing them in plaintext.
 
+**Per-sender author mapping is supported but not configured.** `weishart-site`
+already has `dominic.mdx`, `jenny.mdx`, `luca.mdx` and `nick.mdx` in
+`data/authors`, so adding an `authorsBySender` map to that site in `sites.jsonc`
+is all that remains — then `pnpm check:authors` and a test email from each
+address.
+
 **Per-site GitHub tokens are supported but not in use.** All three sites still
 fall back to the one org-scoped `GITHUB_TOKEN`. Setting
 `<SITE>_GITHUB_TOKEN` per site would contain a leak to one repo; worth doing
@@ -124,10 +131,6 @@ per-installation.
 
 ## Backlog
 
-- **Per-sender author mapping.** `authorsBySender` is in the site schema and
-  `authorFileForSender` resolves it, so mapping a family member's address to
-  their own author page is a config change rather than a schema change. No site
-  populates it yet and it has not been exercised end to end.
 - **Reply on success, with a link to the preview.** Confirming that a post
   landed, and where to look at it, closes the loop — right now success is
   silent and you go hunting for the PR.

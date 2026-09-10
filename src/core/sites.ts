@@ -34,12 +34,15 @@ export interface SiteDefinition extends SiteConfig {
   inboundAddresses: string[]
   /**
    * Per-sender author mapping: an envelope address to the basename of a file
-   * in the site's `data/authors` directory.
+   * in the site's `data/authors` directory, without the extension.
    *
-   * Not yet populated anywhere — the field exists so that mapping a family
-   * member's address to their own author page is a config change rather than
-   * a schema change. An address absent from this map posts under the site's
-   * default author.
+   * An address absent from this map posts under the site's own default author,
+   * because no `authors` field is emitted at all.
+   *
+   * **The name must match a real file.** Frontmatter naming an author that
+   * does not exist breaks the site build, so a typo here is a broken deploy
+   * rather than a cosmetic mistake. `validateSites` checks the shape; only the
+   * target repo can confirm the file, so keep the two in step by hand.
    */
   authorsBySender?: Record<string, string>
 }
@@ -119,9 +122,60 @@ export function validateSites(file: unknown): SiteDefinition[] {
       }
       seenAddresses.add(normalized)
     }
+
+    validateAuthorMap(site)
   }
 
   return sites
+}
+
+/**
+ * Check an `authorsBySender` map for the mistakes that would break a build.
+ *
+ * The author name becomes a filename in the site's `data/authors` directory,
+ * so a value with a path separator, an extension, or stray whitespace produces
+ * frontmatter pointing at a file that cannot exist. Whether the file is
+ * actually there can only be answered by the target repo, so this checks
+ * everything short of that.
+ */
+function validateAuthorMap(site: SiteDefinition): void {
+  const map = site.authorsBySender
+  if (map === undefined) return
+
+  if (typeof map !== 'object' || map === null || Array.isArray(map)) {
+    throw new ConfigError(`site ${site.key} has an authorsBySender that is not an object`)
+  }
+
+  const seen = new Set<string>()
+  for (const [address, author] of Object.entries(map)) {
+    const normalized = address.trim().toLowerCase()
+    if (!normalized.includes('@')) {
+      throw new ConfigError(
+        `site ${site.key} maps an author to something that is not an address: ${address}`,
+      )
+    }
+    // Two entries differing only in case would make resolution depend on
+    // object key order.
+    if (seen.has(normalized)) {
+      throw new ConfigError(`site ${site.key} maps ${normalized} to an author more than once`)
+    }
+    seen.add(normalized)
+
+    if (typeof author !== 'string' || author.trim() === '') {
+      throw new ConfigError(`site ${site.key} maps ${normalized} to an empty author`)
+    }
+    // A name is a bare basename: no directory, no extension.
+    if (!/^[A-Za-z0-9._-]+$/.test(author) || author.includes('..')) {
+      throw new ConfigError(
+        `site ${site.key} maps ${normalized} to an invalid author name "${author}" — use the basename of a file in data/authors, with no path or extension`,
+      )
+    }
+    if (/\.(mdx?|md)$/i.test(author)) {
+      throw new ConfigError(
+        `site ${site.key} maps ${normalized} to "${author}" — drop the extension, the site adds it`,
+      )
+    }
+  }
 }
 
 /** Find the site an inbound message belongs to, by the address it was sent to. */

@@ -218,6 +218,59 @@ describe('per-site GitHub and subject tokens', () => {
   })
 })
 
+describe('validateSites — the author map', () => {
+  // A name here becomes a filename in the site's data/authors directory, and
+  // frontmatter naming an author that does not exist breaks the site build.
+  // So a typo is a broken deploy, not a cosmetic slip.
+  const withMap = (map: unknown) =>
+    validateSites({ sites: [{ ...site(), authorsBySender: map }] })
+
+  it('accepts a well-formed map', () => {
+    expect(withMap({ 'someone@example.com': 'someone' })).toHaveLength(1)
+  })
+
+  it('accepts a name with dots, dashes and underscores', () => {
+    expect(withMap({ 'a@example.com': 'mary-jane_smith.2' })).toHaveLength(1)
+  })
+
+  it('rejects a key that is not an address', () => {
+    expect(() => withMap({ someone: 'someone' })).toThrow(/not an address/)
+  })
+
+  it('rejects an empty author name', () => {
+    expect(() => withMap({ 'a@example.com': '  ' })).toThrow(/empty author/)
+  })
+
+  it('rejects a name carrying its extension', () => {
+    // `authors: ['luca.mdx']` resolves to data/authors/luca.mdx.mdx.
+    expect(() => withMap({ 'a@example.com': 'luca.mdx' })).toThrow(/drop the extension/)
+  })
+
+  it('rejects a name containing a path', () => {
+    expect(() => withMap({ 'a@example.com': 'sub/luca' })).toThrow(/invalid author name/)
+    expect(() => withMap({ 'a@example.com': '../../etc/passwd' })).toThrow(/invalid author name/)
+  })
+
+  it('rejects a name with whitespace', () => {
+    expect(() => withMap({ 'a@example.com': 'two words' })).toThrow(/invalid author name/)
+  })
+
+  it('rejects two entries differing only in case', () => {
+    // Resolution would otherwise depend on object key order.
+    expect(() =>
+      withMap({ 'a@example.com': 'one', 'A@Example.com': 'two' }),
+    ).toThrow(/more than once/)
+  })
+
+  it('rejects a map that is not an object', () => {
+    expect(() => withMap(['a@example.com'])).toThrow(/not an object/)
+  })
+
+  it('accepts a site with no map at all', () => {
+    expect(validateSites({ sites: [site()] })).toHaveLength(1)
+  })
+})
+
 describe('authorFileForSender', () => {
   const mapped = site({ authorsBySender: { 'someone@example.com': 'someone' } })
 
