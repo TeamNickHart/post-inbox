@@ -126,21 +126,28 @@ which matters once someone else's post is being committed.
   landed, and where to look at it, closes the loop — right now success is
   silent and you go hunting for the PR.
 
-  `message.reply()` exists in Email Workers and is the obvious mechanism, but
-  it carries real constraints worth knowing before designing around it: the
-  incoming message must have a **valid DMARC result**, the reply may only go to
-  the original sender, only one reply per message is allowed, and the sending
-  domain must match the receiving domain. **The DMARC requirement is the
-  catch** — Cloudflare's activity log shows `DMARC STATUS: none` on mail from
-  the current sender, so replies may be refused outright. Test that first; if
-  it does not work, the fallback is an outbound provider (Resend is already in
-  use elsewhere), which sidesteps every one of those constraints but means an
-  API key and a real send.
+  Two mechanisms, and **Resend is probably the right one** rather than merely a
+  fallback:
 
-  The reply cannot include the Vercel preview URL directly: the PR is created
-  before Vercel has built anything, so the deploy URL does not exist yet. Link
-  the PR instead and let its checks carry the preview, or accept a second
-  round-trip.
+  - **`message.reply()`**, the Email Workers primitive. No new dependency, but
+    the constraints are severe: the incoming message must have a **valid DMARC
+    result**, the reply may only go to the original sender, only one reply per
+    message, and the sending domain must match the receiving domain. The DMARC
+    rule is the blocker — Cloudflare's activity log shows `DMARC STATUS: none`
+    on mail from the current sender, so this may be refused outright.
+  - **Resend**, already in use for transactional mail elsewhere, so no new
+    vendor. Sidesteps every constraint above: no DMARC requirement on the
+    inbound message, any recipient, several messages per event, no
+    domain-matching rule. Costs an API key and an outbound HTTP call rather
+    than a platform primitive. §7 of the design doc rules out *replacing*
+    Resend with Cloudflare's `send_email` binding, which is the same
+    conclusion from the other direction.
+
+  Either way the first reply cannot carry the Vercel preview URL: the PR is
+  created before Vercel has built anything. Link the PR and let its checks
+  carry the preview. Resend additionally allows a **second** message once the
+  build finishes — "preview ready: <url>" — but something has to notice that,
+  which means CI or a Vercel webhook rather than the Worker.
 
 - **Reply-to-edit: revise a post by replying to the confirmation.** The most
   interesting of these and the least designed. Replying with corrections is a
