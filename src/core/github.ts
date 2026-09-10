@@ -19,12 +19,25 @@ export interface GitHubClientOptions {
   fetch?: typeof fetch
 }
 
-export interface FileToCommit {
-  /** Repo-relative path. */
-  path: string
-  /** UTF-8 text content. */
-  content: string
-}
+/**
+ * A file to include in a commit.
+ *
+ * Text and binary take different routes. The tree API accepts inline `content`
+ * only as UTF-8, so a binary file has to be uploaded as a base64 blob first and
+ * referenced by its SHA — passing bytes as `content` silently corrupts them.
+ */
+export type FileToCommit =
+  | {
+      /** Repo-relative path. */
+      path: string
+      /** UTF-8 text content. */
+      content: string
+    }
+  | {
+      path: string
+      /** Raw bytes, uploaded as a blob and referenced by SHA. */
+      bytes: Uint8Array
+    }
 
 export class GitHubError extends Error {
   constructor(
@@ -93,8 +106,26 @@ export class GitHubClient {
   }
 
   /**
+   * Upload raw bytes as a blob and return its SHA.
+   *
+   * Base64 because the API takes no binary encoding, which inflates the payload
+   * by about a third — worth knowing against GitHub's request size limits when
+   * committing several images at once.
+   */
+  async createBlob(owner: string, repo: string, bytes: Uint8Array): Promise<string> {
+    const blob = await this.#request<{ sha: string }>('POST', `/repos/${owner}/${repo}/git/blobs`, {
+      content: base64Encode(bytes),
+      encoding: 'base64',
+    })
+    return blob.sha
+  }
+
+  /**
    * Create a commit containing `files`, layered on top of `parentSha`.
    * Returns the new commit SHA.
+   *
+   * Binary files are uploaded as blobs first, in parallel, then referenced by
+   * SHA in the tree.
    */
   async createCommit(
     owner: string,
@@ -105,14 +136,28 @@ export class GitHubClient {
   ): Promise<string> {
     const baseTree = await this.getCommitTree(owner, repo, parentSha)
 
+    const entries = await Promise.all(
+      files.map(async (file) => {
+        if ('bytes' in file) {
+          return {
+            path: file.path,
+            mode: '100644' as const,
+            type: 'blob' as const,
+            sha: await this.createBlob(owner, repo, file.bytes),
+          }
+        }
+        return {
+          path: file.path,
+          mode: '100644' as const,
+          type: 'blob' as const,
+          content: file.content,
+        }
+      }),
+    )
+
     const tree = await this.#request<{ sha: string }>('POST', `/repos/${owner}/${repo}/git/trees`, {
       base_tree: baseTree,
-      tree: files.map((file) => ({
-        path: file.path,
-        mode: '100644',
-        type: 'blob',
-        content: file.content,
-      })),
+      tree: entries,
     })
 
     const commit = await this.#request<{ sha: string }>(
@@ -159,4 +204,20 @@ export class GitHubClient {
       options,
     )
   }
+}
+
+/**
+ * Base64-encode bytes without Node's Buffer, which Workers does not provide.
+ *
+ * Chunked because spreading a large array into `String.fromCharCode` overflows
+ * the call stack somewhere in the low hundreds of thousands of arguments — and
+ * an image is comfortably past that.
+ */
+function base64Encode(bytes: Uint8Array): string {
+  const CHUNK = 0x8000
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
 }
