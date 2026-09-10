@@ -19,7 +19,9 @@
     "build:sites": "node --experimental-strip-types scripts/build-sites.mjs",
     "pretest": "pnpm build:sites",
     "check:secrets": "node scripts/check-no-secrets.mjs",
-    "verify": "pnpm check:secrets && pnpm typecheck && pnpm test"
+    "verify": "pnpm check:secrets && pnpm typecheck && pnpm test",
+    "configure": "node scripts/configure.mjs",
+    "configure:site": "node scripts/configure-site.mjs"
   },
   "dependencies": {
     "postal-mime": "^2.4.4"

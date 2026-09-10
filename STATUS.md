@@ -20,6 +20,7 @@ Last updated 2026-09-09.
 | MDX escaping | Working — a markdown body is made safe to compile as MDX |
 | Tags and summary from email | Working — a `Tags:`/`Summary:` block at the top of the body |
 | Multi-site config | Working — `sites.jsonc` plus per-site secrets, routed by inbound address |
+| Guided setup | Working — `pnpm configure` and `pnpm configure:site <key>` |
 | Tests | 143 passing |
 
 Deployed as the `post-inbox` Worker, version `cb312234`, with one inbound
@@ -85,6 +86,15 @@ doc.
 **MVP, remaining:** a GitHub App instead of a fine-grained PAT, Cloudflare
 rate limiting, and hashing the per-site API tokens rather than comparing them
 in plaintext.
+
+**Backlog: per-site GitHub and subject tokens.** Both are global today, so one
+GitHub credential writes to every configured repo and one subject token covers
+every site. Per-site versions would mean a leaked token reaches one blog rather
+than all of them. Deliberately deferred: the GitHub App supersedes the PAT and
+scopes per-repo properly, and three PATs to create and rotate is real friction
+for a marginal gain. `pnpm configure` sets the global ones and
+`pnpm configure:site <key>` the per-site ones, so the split already exists in
+the tooling.
 
 **Backlog:** per-sender author mapping. The `authorsBySender` field exists in
 the site schema and `authorFileForSender` resolves it, so mapping a family

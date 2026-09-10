@@ -117,24 +117,40 @@ nothing but a rotation.
 
 ### 3. Set secrets
 
-One GitHub token globally, then a pair per site named from its key:
+Two guided commands. Global secrets first:
+
+```bash
+pnpm configure
+```
+
+That prompts for `GITHUB_TOKEN` (not echoed) and offers to generate an optional
+`EMAIL_SUBJECT_TOKEN`. Then once per site:
+
+```bash
+pnpm configure:site mysite
+```
+
+That sets `MYSITE_ALLOWED_SENDERS` — who may post, a real access control — and
+offers to generate `MYSITE_API_TOKEN` for the HTTPS path. Both commands ask
+before replacing a secret that is already set.
+
+Generated tokens are piped straight into `wrangler secret put`, so they never
+reach your clipboard or shell history. The two that you have to use elsewhere —
+the subject token and the API token — are printed once; save them then, because
+Cloudflare cannot read a secret back.
+
+To do it by hand instead:
 
 ```bash
 npx wrangler secret put GITHUB_TOKEN
-
-# For a site with "key": "mysite"
 npx wrangler secret put MYSITE_ALLOWED_SENDERS   # comma-separated, required
 npx wrangler secret put MYSITE_API_TOKEN         # HTTPS path, optional
+npx wrangler secret put EMAIL_SUBJECT_TOKEN      # optional fallback
 ```
 
-Optionally, a shared subject-line secret used only when SPF/DKIM cannot vouch
-for a message:
-
-```bash
-npx wrangler secret put EMAIL_SUBJECT_TOKEN
-```
-
-Generate tokens with `openssl rand -hex 24`.
+`GITHUB_TOKEN` and `EMAIL_SUBJECT_TOKEN` are global: one GitHub credential
+writes to every configured repo. Per-site versions of both are on the roadmap —
+see `STATUS.md`.
 
 ### 4. Deploy
 
