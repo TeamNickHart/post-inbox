@@ -104,12 +104,15 @@ export default {
 
     // Which site to post to. A single configured site is the default, so the
     // common case needs no `site` field.
+    //
+    // Every failure from here to the token check answers with a bare 401.
+    // An unauthenticated caller learns nothing — not which site keys exist,
+    // not whether the one they named is real, and not whether it has a token
+    // configured. Listing the keys here would hand them over for free.
     const key = parsed.site ?? (SITES.length === 1 ? SITES[0]!.key : undefined)
     if (!key) {
-      return json(
-        { error: '`site` is required when more than one site is configured', sites: SITES.map((site) => site.key) },
-        400,
-      )
+      console.error('Rejected request: no `site` given and several are configured')
+      return json({ error: 'Unauthorized' }, 401)
     }
 
     let target: ReturnType<typeof siteForRequestKey>
@@ -117,8 +120,6 @@ export default {
       target = siteForRequestKey(key, env)
     } catch (error) {
       if (error instanceof ConfigError) {
-        // A wrong site key is a client error, but the token has not been
-        // checked yet — so do not confirm which keys exist.
         console.error(error.message)
         return json({ error: 'Unauthorized' }, 401)
       }

@@ -6,15 +6,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
-  },
-  // Non-secret configuration. Secrets (GITHUB_TOKEN, EMAIL_SUBJECT_TOKEN,
-  // ALLOWED_SENDERS, API_TOKEN) are set with `wrangler secret put` and are
-  // never committed. See README.
-  "vars": {
-    "GITHUB_OWNER": "TeamNickHart",
-    "GITHUB_REPO": "your-blog",
-    "GITHUB_BASE_BRANCH": "main",
-    "CONTENT_PATH": "data/blog",
-    "CONTENT_EXTENSION": ".mdx"
   }
+
+  // Site configuration lives in `sites.jsonc`, which is gitignored because
+  // this repo is public — `scripts/build-sites.mjs` compiles it into the
+  // bundle. Secrets are set with `pnpm configure` and
+  // `pnpm configure:site <key>`; see README.
 }

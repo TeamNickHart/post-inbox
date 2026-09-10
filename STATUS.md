@@ -21,9 +21,9 @@ Last updated 2026-09-09.
 | Tags and summary from email | Working — a `Tags:`/`Summary:` block at the top of the body |
 | Multi-site config | Working — `sites.jsonc` plus per-site secrets, routed by inbound address |
 | Guided setup | Working — `pnpm configure` and `pnpm configure:site <key>` |
-| Tests | 143 passing |
+| Tests | 144 passing |
 
-Deployed as the `post-inbox` Worker, version `cb312234`, with one inbound
+Deployed as the `post-inbox` Worker, version `89d8adf7`, with one inbound
 address per site via Cloudflare Email Routing.
 
 **This repo is public**, so the real inbound addresses, Worker hostname and
@@ -72,6 +72,12 @@ email, get a draft PR that builds. `pnpm test` diffs the pipeline against the
 recorded `expected.mdx`; `pnpm test:accept` regenerates it after a deliberate
 change.
 - **Test PRs are open** on the blog repo, with branches, from verification runs.
+- **`weishart` is configured in `sites.jsonc` but has no secrets set**, so mail
+  to its address is rejected with "no allowed senders". Run
+  `pnpm configure:site weishart` to finish it.
+- **The obsolete flat `ALLOWED_SENDERS` and `API_TOKEN` secrets are still set**
+  on the Worker and unused by the code. Delete them with
+  `npx wrangler secret delete <name>`.
 
 ## Not built yet
 
@@ -110,6 +116,8 @@ likely a GitHub Action on the PR rather than in the Worker.
 - The GitHub PAT is fine-grained, scoped to `your-blog` only, with
   Contents + Pull requests read/write. **It expires** — when posting starts
   failing with a 502, check this first.
+- `pnpm deploy` does not work: pnpm reserves `deploy` as a builtin. Use
+  `pnpm run deploy`.
 - `wrangler tail` shows live traffic only. To see why an email was rejected,
   start the tail and *then* send the mail. Rejection reasons are logged;
   the sender only ever sees a generic `555 Message rejected`.

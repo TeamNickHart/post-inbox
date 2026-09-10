@@ -126,3 +126,30 @@ describe('authorFileForSender', () => {
     expect(authorFileForSender(site(), 'someone@example.com')).toBeUndefined()
   })
 })
+
+describe('what an unauthenticated caller may learn', () => {
+  // The HTTPS handler answers every failure before the token check with a
+  // bare 401. This test pins the reason: an earlier version returned the
+  // configured site keys in a 400 when `site` was omitted, handing them to
+  // anyone who probed the endpoint.
+  it('site keys are not derivable from a validation error', () => {
+    const sites = [site(), site({ key: 'second', inboundAddresses: ['b@example.com'] })]
+
+    // Looking up an absent key throws a ConfigError whose message names the
+    // key the caller supplied — never the keys that exist.
+    const message = (() => {
+      try {
+        const found = siteForKey(sites, 'guess')
+        if (!found) throw new ConfigError('no site configured with key guess')
+        return ''
+      } catch (error) {
+        return (error as Error).message
+      }
+    })()
+
+    expect(message).toContain('guess')
+    for (const configured of sites) {
+      expect(message).not.toContain(configured.key)
+    }
+  })
+})
