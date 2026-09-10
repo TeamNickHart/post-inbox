@@ -14,6 +14,7 @@ import {
   looksLikeAddress,
   parseAddressList,
   prompt,
+  promptSecret,
   putSecret,
   readSiteKeys,
   secretPrefix,
@@ -108,4 +109,50 @@ if (await confirm('  Set an API token?')) {
   console.log('  Skipped — this site will accept email only.\n')
 }
 
-console.log('Then: pnpm deploy\n')
+// --- Optional per-site overrides of the two global secrets. ---
+const siteGithub = `${prefix}_GITHUB_TOKEN`
+const siteSubject = `${prefix}_EMAIL_SUBJECT_TOKEN`
+
+console.log('Optional per-site overrides.')
+console.log(`  By default this site uses the global GITHUB_TOKEN and`)
+console.log('  EMAIL_SUBJECT_TOKEN. Setting per-site versions means a leaked')
+console.log('  credential reaches this site only, rather than all of them.\n')
+
+if (await confirm('  Set a GitHub token just for this site?')) {
+  if (await shouldSet(siteGithub)) {
+    console.log(`\n  Needs Contents and Pull requests read/write on this site's repo only.`)
+    const token = await promptSecret('  Paste the token (not echoed): ')
+    if (!token) {
+      console.error('  Nothing entered; skipped. This site keeps using GITHUB_TOKEN.\n')
+    } else if (/\s/.test(token)) {
+      console.error('  That value contains whitespace — a copied newline breaks it. Skipped.\n')
+    } else if (putSecret(siteGithub, token)) {
+      console.log(`  Set ${siteGithub}.\n`)
+    } else {
+      console.error('  wrangler failed; see above.\n')
+    }
+  } else {
+    console.log(`  Kept the existing ${siteGithub}.\n`)
+  }
+} else {
+  console.log('  Skipped — this site uses the global GITHUB_TOKEN.\n')
+}
+
+if (await confirm('  Set a subject token just for this site?')) {
+  if (await shouldSet(siteSubject)) {
+    const token = generateToken()
+    if (putSecret(siteSubject, token)) {
+      console.log(`\n  Set ${siteSubject}. Put this in the subject as [token]:\n`)
+      console.log(`    ${token}\n`)
+      console.log('  Save it now — it cannot be read back from Cloudflare.\n')
+    } else {
+      console.error('  wrangler failed; see above.\n')
+    }
+  } else {
+    console.log(`  Kept the existing ${siteSubject}.\n`)
+  }
+} else {
+  console.log('  Skipped — this site uses the global EMAIL_SUBJECT_TOKEN, if set.\n')
+}
+
+console.log('Then: pnpm run deploy\n')

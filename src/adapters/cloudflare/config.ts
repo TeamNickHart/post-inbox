@@ -21,11 +21,15 @@ import sitesFile from '../../generated/sites.json' with { type: 'json' }
  * blob: each is small, individually settable, and never printed.
  */
 export interface Env {
-  /** GitHub App installation token, or a PAT for local testing. */
+  /**
+   * Default GitHub credential, used by any site that does not set its own
+   * `<SITE>_GITHUB_TOKEN`. Must reach every repo it is the default for.
+   */
   GITHUB_TOKEN?: string
   /**
-   * Optional shared secret accepted in an email subject as `[token]`. Only
-   * required when SPF/DKIM verdicts cannot vouch for a message.
+   * Default subject-line secret, used by any site that does not set its own
+   * `<SITE>_EMAIL_SUBJECT_TOKEN`. Only consulted when SPF/DKIM verdicts
+   * cannot vouch for a message.
    */
   EMAIL_SUBJECT_TOKEN?: string
   /**
@@ -71,11 +75,3 @@ export function siteForRequestKey(
   return { site, secrets: secretsForSite(site, env) }
 }
 
-/** Fail loudly at request time if a required global binding is missing. */
-export function requiredGlobal(env: Env, key: 'GITHUB_TOKEN'): string {
-  const value = env[key]
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new ConfigError(`Missing required binding: ${key}`)
-  }
-  return value
-}

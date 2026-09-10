@@ -30,11 +30,16 @@ async function shouldSet(name) {
 }
 
 console.log('\nGlobal secrets for the post-inbox Worker.\n')
+console.log('These are the defaults. Any site may override either with its own')
+console.log('<SITE>_GITHUB_TOKEN or <SITE>_EMAIL_SUBJECT_TOKEN — see')
+console.log('`pnpm configure:site <key>`.\n')
 
 // --- GITHUB_TOKEN: comes from GitHub, so it must be pasted. ---
 if (await shouldSet('GITHUB_TOKEN')) {
   console.log('GITHUB_TOKEN — a fine-grained PAT, or a GitHub App installation token.')
-  console.log('  Needs Contents: read/write and Pull requests: read/write on each blog repo.')
+  console.log('  Needs Contents: read/write and Pull requests: read/write on every repo')
+  console.log('  it is the default for. Scope its resource owner to the org, not to a')
+  console.log('  personal account, or the other repos will answer 404.')
   console.log(`  Setting one up: ${TOKEN_HELP}\n`)
 
   const token = await promptSecret('  Paste the token (not echoed): ')
@@ -77,4 +82,4 @@ if (await confirm('  Set a subject token?')) {
 }
 
 console.log('Next: pnpm configure:site <key>   (once per site in sites.jsonc)')
-console.log('Then: pnpm deploy\n')
+console.log('Then: pnpm run deploy\n')

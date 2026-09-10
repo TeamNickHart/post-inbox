@@ -6,7 +6,6 @@ import { authorFileForSender } from '../../core/sites.ts'
 import type { DraftPostRequest } from '../../core/types.ts'
 import {
   ConfigError,
-  requiredGlobal,
   siteForInboundAddress,
   siteForRequestKey,
   SITES,
@@ -53,7 +52,7 @@ export default {
       {
         policy: {
           allowedSenders: secrets.allowedSenders,
-          subjectToken: env.EMAIL_SUBJECT_TOKEN ?? '',
+          subjectToken: secrets.subjectToken,
           requireAuthResults: env.REQUIRE_AUTH_RESULTS !== 'false',
         },
         stripSignature: env.STRIP_SIGNATURE !== 'false',
@@ -81,7 +80,7 @@ export default {
       const result = await createDraftPost(
         { ...decision.request, ...(authorFile ? { authorFile } : {}) },
         site,
-        githubClient(env),
+        githubClient(secrets.githubToken),
       )
       console.log(
         `Created draft PR #${result.pullRequestNumber} on ${site.key}: ${result.pullRequestUrl}`,
@@ -142,7 +141,11 @@ export default {
     }
 
     try {
-      const result = await createDraftPost(parsed.request, target.site, githubClient(env))
+      const result = await createDraftPost(
+        parsed.request,
+        target.site,
+        githubClient(target.secrets.githubToken),
+      )
       return json(result, 201)
     } catch (error) {
       console.error(`Failed to create post for ${target.site.key}: ${describeGitHubFailure(error)}`)
@@ -176,8 +179,14 @@ function describeGitHubFailure(error: unknown): string {
   return String(error)
 }
 
-function githubClient(env: Env): GitHubClient {
-  return new GitHubClient({ token: requiredGlobal(env, 'GITHUB_TOKEN'), userAgent: 'post-inbox' })
+/**
+ * A GitHub client for one site.
+ *
+ * Per-site rather than global: the token comes from that site's resolved
+ * secrets, so a credential scoped to one repo cannot reach the others.
+ */
+function githubClient(token: string): GitHubClient {
+  return new GitHubClient({ token, userAgent: 'post-inbox' })
 }
 
 function hasValidBearerToken(request: Request, expected: string | undefined): boolean {

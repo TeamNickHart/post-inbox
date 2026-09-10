@@ -53,6 +53,17 @@ export interface SitesFile {
 export interface SiteSecrets {
   allowedSenders: string[]
   apiToken?: string
+  /**
+   * GitHub credential used to write to this site's repo. Falls back to the
+   * global `GITHUB_TOKEN` when the site does not define its own.
+   */
+  githubToken: string
+  /**
+   * Subject-line secret accepted for this site. Falls back to the global
+   * `EMAIL_SUBJECT_TOKEN`; empty when neither is set, which means the token
+   * fallback simply does not exist for this site.
+   */
+  subjectToken: string
 }
 
 export class ConfigError extends Error {
@@ -174,7 +185,28 @@ export function secretsForSite(
   }
 
   const apiToken = env[`${prefix}_API_TOKEN`]?.trim()
-  return { allowedSenders, ...(apiToken ? { apiToken } : {}) }
+
+  // Per-site value if set, else the global one. A fallback rather than a
+  // requirement so that adding per-site tokens is incremental: an existing
+  // deployment with only the global secrets keeps working, and sites can be
+  // moved across one at a time.
+  const githubToken =
+    env[`${prefix}_GITHUB_TOKEN`]?.trim() || env.GITHUB_TOKEN?.trim() || ''
+  if (!githubToken) {
+    throw new ConfigError(
+      `site ${site.key} has no GitHub token: set ${prefix}_GITHUB_TOKEN or GITHUB_TOKEN`,
+    )
+  }
+
+  const subjectToken =
+    env[`${prefix}_EMAIL_SUBJECT_TOKEN`]?.trim() || env.EMAIL_SUBJECT_TOKEN?.trim() || ''
+
+  return {
+    allowedSenders,
+    githubToken,
+    subjectToken,
+    ...(apiToken ? { apiToken } : {}),
+  }
 }
 
 /**

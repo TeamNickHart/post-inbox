@@ -82,16 +82,23 @@ describe('routing', () => {
 })
 
 describe('secrets', () => {
+  /** The minimum environment for a site to resolve at all. */
+  const withGlobals = (extra: Record<string, string> = {}) => ({
+    GITHUB_TOKEN: 'global-gh',
+    MYSITE_ALLOWED_SENDERS: 'a@example.com',
+    ...extra,
+  })
+
   it('derives the env var prefix from the key', () => {
     expect(secretPrefix('mysite')).toBe('MYSITE')
     expect(secretPrefix('my-site')).toBe('MY_SITE')
   })
 
   it('reads the allowlist and token for a site', () => {
-    const secrets = secretsForSite(site(), {
-      MYSITE_ALLOWED_SENDERS: 'A@example.com, b@example.com',
-      MYSITE_API_TOKEN: 'tok',
-    })
+    const secrets = secretsForSite(
+      site(),
+      withGlobals({ MYSITE_ALLOWED_SENDERS: 'A@example.com, b@example.com', MYSITE_API_TOKEN: 'tok' }),
+    )
     expect(secrets.allowedSenders).toEqual(['a@example.com', 'b@example.com'])
     expect(secrets.apiToken).toBe('tok')
   })
@@ -101,39 +108,113 @@ describe('secrets', () => {
     // use either. Splitting on commas alone stored the whole string as one
     // address that contained an `@` — so it passed validation and then matched
     // no sender at all.
-    const secrets = secretsForSite(site(), {
-      MYSITE_ALLOWED_SENDERS: 'a@example.com b@example.com',
-    })
+    const secrets = secretsForSite(
+      site(),
+      withGlobals({ MYSITE_ALLOWED_SENDERS: 'a@example.com b@example.com' }),
+    )
     expect(secrets.allowedSenders).toEqual(['a@example.com', 'b@example.com'])
   })
 
   it('accepts a mix of commas and spaces', () => {
-    const secrets = secretsForSite(site(), {
-      MYSITE_ALLOWED_SENDERS: 'a@example.com, b@example.com  c@example.com',
-    })
+    const secrets = secretsForSite(
+      site(),
+      withGlobals({ MYSITE_ALLOWED_SENDERS: 'a@example.com, b@example.com  c@example.com' }),
+    )
     expect(secrets.allowedSenders).toHaveLength(3)
   })
 
   it('rejects an entry that could never match a sender', () => {
     expect(() =>
-      secretsForSite(site(), { MYSITE_ALLOWED_SENDERS: 'a@example.com, notanaddress' }),
+      secretsForSite(site(), withGlobals({ MYSITE_ALLOWED_SENDERS: 'a@example.com, notanaddress' })),
     ).toThrow(/malformed/)
   })
 
   it('treats a missing allowlist as a misconfiguration, not allow-everyone', () => {
-    expect(() => secretsForSite(site(), {})).toThrow(/MYSITE_ALLOWED_SENDERS/)
-    expect(() => secretsForSite(site(), { MYSITE_ALLOWED_SENDERS: ' , ' })).toThrow(ConfigError)
+    expect(() => secretsForSite(site(), { GITHUB_TOKEN: 'g' })).toThrow(/MYSITE_ALLOWED_SENDERS/)
+    expect(() =>
+      secretsForSite(site(), { GITHUB_TOKEN: 'g', MYSITE_ALLOWED_SENDERS: ' , ' }),
+    ).toThrow(ConfigError)
   })
 
   it('allows a site with no api token, for email-only posting', () => {
-    const secrets = secretsForSite(site(), { MYSITE_ALLOWED_SENDERS: 'a@example.com' })
+    const secrets = secretsForSite(site(), withGlobals())
     expect(secrets.apiToken).toBeUndefined()
   })
 
   it('does not read another site\'s secrets', () => {
     expect(() =>
-      secretsForSite(site({ key: 'other' }), { MYSITE_ALLOWED_SENDERS: 'a@example.com' }),
+      secretsForSite(site({ key: 'other' }), withGlobals()),
     ).toThrow(/OTHER_ALLOWED_SENDERS/)
+  })
+})
+
+describe('per-site GitHub and subject tokens', () => {
+  const base = { MYSITE_ALLOWED_SENDERS: 'a@example.com' }
+
+  it('prefers a site\'s own GitHub token over the global one', () => {
+    const secrets = secretsForSite(site(), {
+      ...base,
+      GITHUB_TOKEN: 'global-gh',
+      MYSITE_GITHUB_TOKEN: 'site-gh',
+    })
+    expect(secrets.githubToken).toBe('site-gh')
+  })
+
+  it('falls back to the global GitHub token', () => {
+    // A fallback rather than a requirement, so adding per-site tokens is
+    // incremental: an existing deployment with only globals keeps working.
+    const secrets = secretsForSite(site(), { ...base, GITHUB_TOKEN: 'global-gh' })
+    expect(secrets.githubToken).toBe('global-gh')
+  })
+
+  it('rejects a site with no GitHub token from either source', () => {
+    expect(() => secretsForSite(site(), base)).toThrow(/MYSITE_GITHUB_TOKEN or GITHUB_TOKEN/)
+  })
+
+  it('does not read another site\'s GitHub token', () => {
+    const secrets = secretsForSite(site({ key: 'other' }), {
+      OTHER_ALLOWED_SENDERS: 'a@example.com',
+      GITHUB_TOKEN: 'global-gh',
+      MYSITE_GITHUB_TOKEN: 'not-mine',
+    })
+    expect(secrets.githubToken).toBe('global-gh')
+  })
+
+  it('prefers a site\'s own subject token over the global one', () => {
+    const secrets = secretsForSite(site(), {
+      ...base,
+      GITHUB_TOKEN: 'g',
+      EMAIL_SUBJECT_TOKEN: 'global-subject',
+      MYSITE_EMAIL_SUBJECT_TOKEN: 'site-subject',
+    })
+    expect(secrets.subjectToken).toBe('site-subject')
+  })
+
+  it('falls back to the global subject token', () => {
+    const secrets = secretsForSite(site(), {
+      ...base,
+      GITHUB_TOKEN: 'g',
+      EMAIL_SUBJECT_TOKEN: 'global-subject',
+    })
+    expect(secrets.subjectToken).toBe('global-subject')
+  })
+
+  it('leaves the subject token empty when neither is set', () => {
+    // Empty is valid: it means the token fallback does not exist for this
+    // site, so a message without passing verdicts is simply rejected.
+    const secrets = secretsForSite(site(), { ...base, GITHUB_TOKEN: 'g' })
+    expect(secrets.subjectToken).toBe('')
+  })
+
+  it('ignores a whitespace-only token rather than treating it as set', () => {
+    const secrets = secretsForSite(site(), {
+      ...base,
+      GITHUB_TOKEN: 'global-gh',
+      MYSITE_GITHUB_TOKEN: '   ',
+      MYSITE_EMAIL_SUBJECT_TOKEN: '  ',
+    })
+    expect(secrets.githubToken).toBe('global-gh')
+    expect(secrets.subjectToken).toBe('')
   })
 })
 

@@ -3,7 +3,7 @@
 **Working end to end on three real sites.** Email a site's address, get a pull
 request with a building preview.
 
-Last updated 2026-09-09. Worker version `50d25eb7`, 152 tests passing.
+Last updated 2026-09-10. Worker version `7c56f23f`, 160 tests passing.
 
 ## What works
 
@@ -20,6 +20,7 @@ Last updated 2026-09-09. Worker version `50d25eb7`, 152 tests passing.
 | Markdown → MDX | Vercel previews build on all three sites |
 | Tags and summary from email | A `Tags:`/`Summary:` block at the top of the body |
 | Guided setup | `pnpm configure`, `pnpm configure:site <key>` |
+| Per-site GitHub and subject tokens | Resolved per site, falling back to the global value |
 
 Three sites configured, each with its own inbound address, sender allowlist and
 API token. One GitHub token covers all three, scoped to the org.
@@ -112,12 +113,14 @@ which matters once someone else's post is being committed.
 
 **Hash the per-site API tokens** rather than comparing them in plaintext.
 
+**Per-site GitHub tokens are supported but not in use.** All three sites still
+fall back to the one org-scoped `GITHUB_TOKEN`. Setting
+`<SITE>_GITHUB_TOKEN` per site would contain a leak to one repo; worth doing
+when the GitHub App lands, since App installation tokens are naturally
+per-installation.
+
 ## Backlog
 
-- **Per-site GitHub and subject tokens.** Both are global today, so one GitHub
-  credential writes to every repo. Deferred because the GitHub App supersedes
-  the PAT and scopes properly, and three PATs to rotate is friction for a
-  marginal gain. The tooling split already anticipates it.
 - **Per-sender author mapping.** `authorsBySender` is in the site schema and
   `authorFileForSender` resolves it, so mapping a family member's address to
   their own author page is a config change rather than a schema change. No site

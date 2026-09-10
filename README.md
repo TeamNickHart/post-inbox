@@ -146,11 +146,31 @@ npx wrangler secret put GITHUB_TOKEN
 npx wrangler secret put MYSITE_ALLOWED_SENDERS   # comma- or space-separated
 npx wrangler secret put MYSITE_API_TOKEN         # HTTPS path, optional
 npx wrangler secret put EMAIL_SUBJECT_TOKEN      # optional fallback
+
+# Optional per-site overrides of the two globals
+npx wrangler secret put MYSITE_GITHUB_TOKEN
+npx wrangler secret put MYSITE_EMAIL_SUBJECT_TOKEN
 ```
 
-`GITHUB_TOKEN` and `EMAIL_SUBJECT_TOKEN` are global: one GitHub credential
-writes to every configured repo. Per-site versions of both are on the roadmap —
-see `STATUS.md`.
+#### Global versus per-site tokens
+
+`GITHUB_TOKEN` and `EMAIL_SUBJECT_TOKEN` are **defaults**. Any site may override
+either with its own:
+
+| Secret | Effect |
+|---|---|
+| `MYSITE_GITHUB_TOKEN` | This site writes with its own credential |
+| `MYSITE_EMAIL_SUBJECT_TOKEN` | This site accepts its own subject secret |
+
+A per-site GitHub token is the better setup once you have more than one site: a
+credential scoped to one repo cannot reach the others, so a leak is contained.
+The global token has to reach every repo it is the default for — and its
+resource owner must be the **org**, not a personal account, or the other repos
+answer 404 rather than 403.
+
+Both fall back to the global value, so this is incremental: an existing
+deployment with only the globals keeps working, and sites can move across one
+at a time. `pnpm configure:site <key>` offers both.
 
 ### 4. Deploy
 

@@ -27,3 +27,9 @@ STRIP_SIGNATURE="true"
 # templates hide drafts from production builds, which includes Vercel
 # previews, so a draft post 404s on the preview meant for reviewing it.
 POST_AS_DRAFT="false"
+
+# Per-site overrides of the two globals above. A site falls back to the global
+# value when it does not set its own. A per-site GitHub token is the better
+# setup with several sites: one scoped to a single repo cannot reach the others.
+# MYSITE_GITHUB_TOKEN=""
+# MYSITE_EMAIL_SUBJECT_TOKEN=""
