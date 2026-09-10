@@ -9,25 +9,29 @@ Last updated 2026-09-09.
 
 | Thing | State |
 |---|---|
-| HTTPS POST → draft PR | Working — verified, [PR #7](https://github.com/your-org/your-blog/pull/7) |
-| Email → draft PR | Working — verified, [PR #8](https://github.com/your-org/your-blog/pull/8) |
+| HTTPS POST → draft PR | Working — verified end to end |
+| Email → draft PR | Working — verified end to end |
 | Sender allowlist | Working — a non-allowlisted sender is rejected |
 | Subject token | Now a conditional fallback — only required when SPF/DKIM cannot vouch for the message |
 | SPF/DKIM verdict check | Working — Gmail-sent mail arrives with passing verdicts |
 | Bearer-token auth on HTTPS | Working — 401 with no token, wrong token, and 405 on GET |
 | Vercel preview on the PR | Passing — a generated post does not break the site build |
-| Email signature stripping | Working — verified in production, [PR #9](https://github.com/your-org/your-blog/pull/9) |
+| Email signature stripping | Working — verified in production |
 | MDX escaping | Working — a markdown body is made safe to compile as MDX |
 | Tags and summary from email | Working — a `Tags:`/`Summary:` block at the top of the body |
-| Tests | 124 passing |
+| Multi-site config | Working — `sites.jsonc` plus per-site secrets, routed by inbound address |
+| Tests | 143 passing |
 
-Deployed as `post-inbox` at `https://post-inbox.example.workers.dev`,
-version `cb312234`. Inbound address is `draft@example.com` via Cloudflare
-Email Routing.
+Deployed as the `post-inbox` Worker, version `cb312234`, with one inbound
+address per site via Cloudflare Email Routing.
 
-Target repo is `your-org/your-blog`, posts land in `data/blog` as
-`.mdx` on a `post-inbox/<date>-<slug>` branch. They are committed with
-`draft: false` — see below.
+**This repo is public**, so the real inbound addresses, Worker hostname and
+repo mappings live in `sites.jsonc`, which is gitignored. See
+`sites.example.jsonc`, and use `example.com` placeholders in anything
+committed.
+
+Posts land in each site's `data/blog` as `.mdx` on a
+`post-inbox/<date>-<slug>` branch, committed with `draft: false` — see below.
 
 ## Confirmed by building it, not assumed
 
@@ -66,7 +70,7 @@ Target repo is `your-org/your-blog`, posts land in `data/blog` as
 email, get a draft PR that builds. `pnpm test` diffs the pipeline against the
 recorded `expected.mdx`; `pnpm test:accept` regenerates it after a deliberate
 change.
-- **Test PRs #7, #8 and #9 are open** on the blog repo, with branches.
+- **Test PRs are open** on the blog repo, with branches, from verification runs.
 
 ## Not built yet
 
@@ -78,9 +82,14 @@ blocking checks, tag linting and spellcheck as advisory. Needed because a post
 can reach a repo without passing through post-inbox. See §11 of the design
 doc.
 
-**MVP:** multi-site and multi-user config (users × sites, token hashes not
-plaintext, per-user author mapping), a GitHub App instead of a fine-grained
-PAT, Cloudflare rate limiting.
+**MVP, remaining:** a GitHub App instead of a fine-grained PAT, Cloudflare
+rate limiting, and hashing the per-site API tokens rather than comparing them
+in plaintext.
+
+**Backlog:** per-sender author mapping. The `authorsBySender` field exists in
+the site schema and `authorFileForSender` resolves it, so mapping a family
+member's address to their own author page is a config change — but no site
+populates it yet, and it has not been exercised end to end.
 
 **Post-MVP:** attachments — images and PDFs committed to the repo, MIME
 allowlist, size cap. HEIC conversion and resizing are a separate problem,
@@ -94,6 +103,11 @@ likely a GitHub Action on the PR rather than in the Worker.
 - `wrangler tail` shows live traffic only. To see why an email was rejected,
   start the tail and *then* send the mail. Rejection reasons are logged;
   the sender only ever sees a generic `555 Message rejected`.
+- **This repo is public.** Never commit real inbound addresses, the Worker
+  hostname, or repo mappings — use `example.com` placeholders. Git history was
+  rewritten once (`git filter-repo --replace-text`) to purge a real address
+  and Worker URL that reached `STATUS.md`; a force-push followed.
+  `pnpm check:secrets` now blocks the obvious cases, including `git add -f`.
 - The Workers runtime rejects a detached native `fetch` with
   "Illegal invocation". `GitHubClient` binds it to `globalThis` for this
   reason; a test injecting a plain function will not catch a regression here.

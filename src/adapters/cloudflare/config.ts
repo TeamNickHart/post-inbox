@@ -1,83 +1,81 @@
-import type { SenderAuthPolicy } from '../../core/senderAuth.ts'
-import type { SiteConfig } from '../../core/types.ts'
+import {
+  ConfigError,
+  secretsForSite,
+  siteForAddress,
+  siteForKey,
+  validateSites,
+  type SiteDefinition,
+  type SiteSecrets,
+} from '../../core/sites.ts'
+import sitesFile from '../../generated/sites.json' with { type: 'json' }
 
 /**
  * Worker environment bindings.
  *
- * Everything here is a Wrangler secret or var — no site config or
- * credential is ever committed. See `config.example.json` /
- * `.dev.vars.example`.
+ * Site *definitions* live in `sites.jsonc` — gitignored, because this repo is
+ * public and that file names the addresses that accept mail and the repos
+ * written to. `scripts/build-sites.mjs` compiles it into the bundle.
+ *
+ * Site *secrets* are individual per-site variables named from each site's key
+ * (`NICKHART_ALLOWED_SENDERS`, `NICKHART_API_TOKEN`) rather than one JSON
+ * blob: each is small, individually settable, and never printed.
  */
 export interface Env {
   /** GitHub App installation token, or a PAT for local testing. */
-  GITHUB_TOKEN: string
+  GITHUB_TOKEN?: string
   /**
-   * Shared secret accepted in the email subject as `[token]`. Optional:
-   * it is only required when SPF/DKIM verdicts cannot carry the message.
+   * Optional shared secret accepted in an email subject as `[token]`. Only
+   * required when SPF/DKIM verdicts cannot vouch for a message.
    */
   EMAIL_SUBJECT_TOKEN?: string
-  /** Comma-separated allowlist of envelope sender addresses. */
-  ALLOWED_SENDERS: string
-  /** Bearer token for the HTTPS path. */
-  API_TOKEN: string
-  /** e.g. "TeamNickHart" */
-  GITHUB_OWNER: string
-  /** e.g. "your-blog" */
-  GITHUB_REPO: string
-  /** Branch to target, e.g. "main" */
-  GITHUB_BASE_BRANCH: string
-  /** e.g. "data/blog" */
-  CONTENT_PATH: string
-  /** e.g. ".mdx" */
-  CONTENT_EXTENSION: string
   /**
    * Set to "false" only if the mail platform does not stamp SPF/DKIM
    * results. Deliberate downgrade — see senderAuth.ts.
    */
   REQUIRE_AUTH_RESULTS?: string
-  /**
-   * Set to "false" to keep email signatures in the post body. On by
-   * default; only the standard `"-- "` delimiter is recognised.
-   */
+  /** Set to "false" to keep email signatures in the post body. */
   STRIP_SIGNATURE?: string
-  /**
-   * Set to "true" to commit posts with `draft: true`. Off by default,
-   * because many templates hide drafts from production builds — which
-   * includes Vercel preview deployments, making the post unreviewable.
-   * Turn it on if you would rather merge unpublished and publish later.
-   */
+  /** Set to "true" to commit posts with `draft: true`. */
   POST_AS_DRAFT?: string
+  /** Per-site secrets, e.g. `NICKHART_ALLOWED_SENDERS`. */
+  [key: string]: string | undefined
 }
 
-/** Fail loudly at request time if a required binding is missing. */
-function required(env: Env, key: keyof Env): string {
+/**
+ * The configured sites, validated once at module load.
+ *
+ * `scripts/build-sites.mjs` validates before bundling; doing it again here
+ * costs nothing and means a hand-edited bundle cannot slip through.
+ */
+export const SITES: SiteDefinition[] = validateSites(sitesFile)
+
+export { ConfigError }
+
+/** Resolve the site an inbound email was addressed to, with its secrets. */
+export function siteForInboundAddress(
+  address: string,
+  env: Env,
+): { site: SiteDefinition; secrets: SiteSecrets } {
+  const site = siteForAddress(SITES, address)
+  if (!site) throw new ConfigError(`no site configured for inbound address ${address}`)
+  return { site, secrets: secretsForSite(site, env) }
+}
+
+/** Resolve a site by key for the HTTPS path, with its secrets. */
+export function siteForRequestKey(
+  key: string,
+  env: Env,
+): { site: SiteDefinition; secrets: SiteSecrets } {
+  const site = siteForKey(SITES, key)
+  if (!site) throw new ConfigError(`no site configured with key ${key}`)
+  return { site, secrets: secretsForSite(site, env) }
+}
+
+/** Fail loudly at request time if a required global binding is missing. */
+export function requiredGlobal(env: Env, key: 'GITHUB_TOKEN'): string {
   const value = env[key]
   if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`Missing required binding: ${key}`)
+    throw new ConfigError(`Missing required binding: ${key}`)
   }
   return value
-}
-
-export function siteConfigFromEnv(env: Env): SiteConfig {
-  return {
-    owner: required(env, 'GITHUB_OWNER'),
-    repo: required(env, 'GITHUB_REPO'),
-    baseBranch: required(env, 'GITHUB_BASE_BRANCH'),
-    contentPath: required(env, 'CONTENT_PATH'),
-    extension: required(env, 'CONTENT_EXTENSION'),
-  }
-}
-
-export function senderAuthPolicyFromEnv(env: Env): SenderAuthPolicy {
-  return {
-    allowedSenders: required(env, 'ALLOWED_SENDERS')
-      .split(',')
-      .map((address) => address.trim())
-      .filter(Boolean),
-    // Optional by design — see senderAuth.ts. Without it, a message that
-    // arrives with no passing verdicts is rejected outright rather than
-    // falling back to a shared secret.
-    subjectToken: env.EMAIL_SUBJECT_TOKEN ?? '',
-    requireAuthResults: env.REQUIRE_AUTH_RESULTS !== 'false',
-  }
 }

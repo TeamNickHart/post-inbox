@@ -87,41 +87,63 @@ the single blog repo with **Contents: read/write** and **Pull requests:
 read/write**. (A GitHub App installed on the org is the better answer for
 the MVP, when multiple repos are in play.)
 
-### 2. Configure the target repo
+### 2. Configure your sites
 
-Non-secret settings live in `wrangler.jsonc` under `vars`:
+Copy the example and edit it:
 
-```jsonc
-"vars": {
-  "GITHUB_OWNER": "TeamNickHart",
-  "GITHUB_REPO": "your-blog",
-  "GITHUB_BASE_BRANCH": "main",
-  "CONTENT_PATH": "data/blog",
-  "CONTENT_EXTENSION": ".mdx"
-}
+```bash
+cp sites.example.jsonc sites.jsonc
 ```
+
+`sites.jsonc` is **gitignored** — it names the addresses that accept mail and
+the repos that get written to, and this repo is public. Keep real values out of
+anything committed, including docs and tests: use `example.com` placeholders.
+
+Each site needs a `key` (lowercase, it becomes an environment-variable prefix),
+one or more `inboundAddresses`, and the repo to write to. For the Tailwind
+Nextjs Starter Blog, `contentPath` is `data/blog` and `extension` is `.mdx`.
+
+**Pick an unguessable inbound address.** `draft@yourdomain.com` will be found by
+address-harvesting bots, and every junk message wakes the Worker and fills the
+logs with rejections:
+
+```bash
+pnpm generate:address yourdomain.com
+```
+
+This is noise reduction, not access control — the sender allowlist and DKIM
+checks are what stop a stranger posting, and an address that leaks costs you
+nothing but a rotation.
 
 ### 3. Set secrets
 
+One GitHub token globally, then a pair per site named from its key:
+
 ```bash
 npx wrangler secret put GITHUB_TOKEN
-npx wrangler secret put ALLOWED_SENDERS
-npx wrangler secret put API_TOKEN
 
-# Optional — only needed as a fallback when SPF/DKIM cannot vouch for a
-# message. Set it if you disable verdict checking, or if your mail arrives
-# without verdicts.
+# For a site with "key": "mysite"
+npx wrangler secret put MYSITE_ALLOWED_SENDERS   # comma-separated, required
+npx wrangler secret put MYSITE_API_TOKEN         # HTTPS path, optional
+```
+
+Optionally, a shared subject-line secret used only when SPF/DKIM cannot vouch
+for a message:
+
+```bash
 npx wrangler secret put EMAIL_SUBJECT_TOKEN
 ```
 
-Generate tokens with `openssl rand -hex 24`. `ALLOWED_SENDERS` is a
-comma-separated list of addresses.
+Generate tokens with `openssl rand -hex 24`.
 
 ### 4. Deploy
 
 ```bash
-npx wrangler deploy
+pnpm deploy
 ```
+
+This compiles `sites.jsonc` into the bundle and deploys. A malformed config
+fails here rather than when an email arrives.
 
 ### 5. Wire up email
 
@@ -132,6 +154,9 @@ In the Cloudflare dashboard, on a domain you control:
 2. **Email Routing → Routing rules → Create address.** Pick the address
    you will mail posts to, e.g. `post@yourdomain.com`.
 3. Set its action to **Send to a Worker** and choose `post-inbox`.
+
+Repeat per site. The address the mail was sent *to* is what selects the site,
+so each site needs its own address.
 
 ## Usage
 
@@ -173,12 +198,14 @@ case is preserved (`IKEA`, `SwiftLint`) to match the tags a site already uses.
 
 ```bash
 curl -X POST https://post-inbox.<subdomain>.workers.dev \
-  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Authorization: Bearer $MYSITE_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title":"My New Post","body":"Hello.","tags":["Personal"]}'
+  -d '{"site":"mysite","title":"My New Post","body":"Hello.","tags":["Personal"]}'
 ```
 
-`title` and `body` are required; `date`, `tags`, and `summary` are optional.
+`title` and `body` are required. `site` names which site to post to, and may be
+omitted when only one is configured. `date`, `tags`, `summary` and `draft` are
+optional. The bearer token is the one for that site.
 
 ### Markdown, and what MDX does to it
 

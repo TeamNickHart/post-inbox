@@ -145,3 +145,10 @@ vite.config.ts.timestamp-*
 # Cloudflare
 .dev.vars
 .wrangler/
+
+# Generated from sites.jsonc by scripts/build-sites.mjs
+src/generated/
+
+# Real site configuration: names the addresses that accept mail and the repos
+# written to. This repo is public — copy sites.example.jsonc instead.
+sites.jsonc

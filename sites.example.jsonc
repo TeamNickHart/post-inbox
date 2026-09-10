@@ -1,0 +1,45 @@
+{
+  // Copy this to `sites.jsonc` and fill in your own sites. `sites.jsonc` is
+  // gitignored: it names the addresses that accept mail and the repos that
+  // get written to, which is not something to publish.
+  //
+  // Each site's SECRETS are separate, named from its `key` uppercased, with
+  // hyphens becoming underscores:
+  //
+  //   npx wrangler secret put MYSITE_ALLOWED_SENDERS
+  //   npx wrangler secret put MYSITE_API_TOKEN
+  //
+  // `_ALLOWED_SENDERS` is a comma-separated list of envelope addresses
+  // permitted to post, and is required.
+  // `_API_TOKEN` is the bearer token for the HTTPS path, and is optional —
+  // omit it for a site that only accepts email.
+  "sites": [
+    {
+      // Lowercase letters, digits and hyphens only: this becomes the
+      // environment-variable prefix above.
+      "key": "mysite",
+
+      // The address you mail posts to. Set this up in Cloudflare Email
+      // Routing as "Send to a Worker". One address per site: the address the
+      // mail was sent to is what selects the site.
+      "inboundAddresses": ["draft@example.com"],
+
+      // Where posts get committed.
+      "owner": "your-github-org",
+      "repo": "your-blog-repo",
+      "baseBranch": "main",
+
+      // For the Tailwind Nextjs Starter Blog these are the right values.
+      "contentPath": "data/blog",
+      "extension": ".mdx"
+
+      // Optional, for a site with several authors: map an envelope address to
+      // a file in the site's `data/authors` directory. Anyone unlisted posts
+      // under the site's default author.
+      //
+      // "authorsBySender": {
+      //   "someone@example.com": "someone"
+      // }
+    }
+  ]
+}

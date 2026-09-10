@@ -2,8 +2,16 @@ import PostalMime from 'postal-mime'
 import { createDraftPost } from '../../core/createDraftPost.ts'
 import { GitHubClient } from '../../core/github.ts'
 import { emailToPost } from '../../core/emailToPost.ts'
+import { authorFileForSender } from '../../core/sites.ts'
 import type { DraftPostRequest } from '../../core/types.ts'
-import { senderAuthPolicyFromEnv, siteConfigFromEnv, type Env } from './config.ts'
+import {
+  ConfigError,
+  requiredGlobal,
+  siteForInboundAddress,
+  siteForRequestKey,
+  SITES,
+  type Env,
+} from './config.ts'
 
 /**
  * Cloudflare adapter: two entry points, one shared core call.
@@ -16,6 +24,19 @@ import { senderAuthPolicyFromEnv, siteConfigFromEnv, type Env } from './config.t
  */
 export default {
   async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
+    // The destination address selects the site. `message.to` is the envelope
+    // recipient, which is what Email Routing actually delivered to — not a
+    // header a sender could have written.
+    let target: ReturnType<typeof siteForInboundAddress>
+    try {
+      target = siteForInboundAddress(message.to, env)
+    } catch (error) {
+      console.error(`Rejected inbound email: ${String(error)}`)
+      message.setReject('Message rejected')
+      return
+    }
+    const { site, secrets } = target
+
     const email = await PostalMime.parse(message.raw)
 
     const decision = emailToPost(
@@ -30,7 +51,11 @@ export default {
         date: email.date ? new Date(email.date) : null,
       },
       {
-        policy: senderAuthPolicyFromEnv(env),
+        policy: {
+          allowedSenders: secrets.allowedSenders,
+          subjectToken: env.EMAIL_SUBJECT_TOKEN ?? '',
+          requireAuthResults: env.REQUIRE_AUTH_RESULTS !== 'false',
+        },
         stripSignature: env.STRIP_SIGNATURE !== 'false',
         draft: env.POST_AS_DRAFT === 'true',
       },
@@ -38,7 +63,7 @@ export default {
 
     if (!decision.ok) {
       // Logged for us; the sender only ever sees a generic rejection.
-      console.error(`Rejected inbound email: ${decision.reason}`)
+      console.error(`Rejected inbound email for ${site.key}: ${decision.reason}`)
       message.setReject('Message rejected')
       return
     }
@@ -49,17 +74,20 @@ export default {
       console.warn('Message admitted by subject token; SPF/DKIM did not pass')
     }
 
-    const result = await createDraftPost(decision.request, siteConfigFromEnv(env), githubClient(env))
-    console.log(`Created draft PR #${result.pullRequestNumber}: ${result.pullRequestUrl}`)
+    // A site may map specific senders to their own author page.
+    const authorFile = authorFileForSender(site, decision.request.author)
+
+    const result = await createDraftPost(
+      { ...decision.request, ...(authorFile ? { authorFile } : {}) },
+      site,
+      githubClient(env),
+    )
+    console.log(`Created draft PR #${result.pullRequestNumber} on ${site.key}: ${result.pullRequestUrl}`)
   },
 
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
       return json({ error: 'Method not allowed' }, 405)
-    }
-
-    if (!hasValidBearerToken(request, env.API_TOKEN)) {
-      return json({ error: 'Unauthorized' }, 401)
     }
 
     let payload: unknown
@@ -74,8 +102,35 @@ export default {
       return json({ error: parsed.error }, 400)
     }
 
+    // Which site to post to. A single configured site is the default, so the
+    // common case needs no `site` field.
+    const key = parsed.site ?? (SITES.length === 1 ? SITES[0]!.key : undefined)
+    if (!key) {
+      return json(
+        { error: '`site` is required when more than one site is configured', sites: SITES.map((site) => site.key) },
+        400,
+      )
+    }
+
+    let target: ReturnType<typeof siteForRequestKey>
     try {
-      const result = await createDraftPost(parsed.request, siteConfigFromEnv(env), githubClient(env))
+      target = siteForRequestKey(key, env)
+    } catch (error) {
+      if (error instanceof ConfigError) {
+        // A wrong site key is a client error, but the token has not been
+        // checked yet — so do not confirm which keys exist.
+        console.error(error.message)
+        return json({ error: 'Unauthorized' }, 401)
+      }
+      throw error
+    }
+
+    if (!target.secrets.apiToken || !hasValidBearerToken(request, target.secrets.apiToken)) {
+      return json({ error: 'Unauthorized' }, 401)
+    }
+
+    try {
+      const result = await createDraftPost(parsed.request, target.site, githubClient(env))
       return json(result, 201)
     } catch (error) {
       console.error('Failed to create draft post', error)
@@ -85,7 +140,7 @@ export default {
 }
 
 function githubClient(env: Env): GitHubClient {
-  return new GitHubClient({ token: env.GITHUB_TOKEN, userAgent: 'post-inbox' })
+  return new GitHubClient({ token: requiredGlobal(env, 'GITHUB_TOKEN'), userAgent: 'post-inbox' })
 }
 
 function hasValidBearerToken(request: Request, expected: string | undefined): boolean {
@@ -106,7 +161,7 @@ function hasValidBearerToken(request: Request, expected: string | undefined): bo
 /** Validate and normalize the HTTPS payload. */
 function parsePostPayload(
   payload: unknown,
-): { request: DraftPostRequest } | { error: string } {
+): { request: DraftPostRequest; site?: string } | { error: string } {
   if (typeof payload !== 'object' || payload === null) {
     return { error: 'Body must be a JSON object' }
   }
@@ -139,7 +194,12 @@ function parsePostPayload(
     return { error: '`draft` must be a boolean' }
   }
 
+  if (body.site !== undefined && typeof body.site !== 'string') {
+    return { error: '`site` must be a string' }
+  }
+
   return {
+    ...(typeof body.site === 'string' ? { site: body.site } : {}),
     request: {
       title,
       body: text,
