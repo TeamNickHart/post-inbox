@@ -122,6 +122,67 @@ which matters once someone else's post is being committed.
   `authorFileForSender` resolves it, so mapping a family member's address to
   their own author page is a config change rather than a schema change. No site
   populates it yet and it has not been exercised end to end.
+- **Reply on success, with a link to the preview.** Confirming that a post
+  landed, and where to look at it, closes the loop — right now success is
+  silent and you go hunting for the PR.
+
+  `message.reply()` exists in Email Workers and is the obvious mechanism, but
+  it carries real constraints worth knowing before designing around it: the
+  incoming message must have a **valid DMARC result**, the reply may only go to
+  the original sender, only one reply per message is allowed, and the sending
+  domain must match the receiving domain. **The DMARC requirement is the
+  catch** — Cloudflare's activity log shows `DMARC STATUS: none` on mail from
+  the current sender, so replies may be refused outright. Test that first; if
+  it does not work, the fallback is an outbound provider (Resend is already in
+  use elsewhere), which sidesteps every one of those constraints but means an
+  API key and a real send.
+
+  The reply cannot include the Vercel preview URL directly: the PR is created
+  before Vercel has built anything, so the deploy URL does not exist yet. Link
+  the PR instead and let its checks carry the preview, or accept a second
+  round-trip.
+
+- **Reply-to-edit: revise a post by replying to the confirmation.** The most
+  interesting of these and the least designed. Replying with corrections is a
+  far better editing loop than opening a PR in a browser.
+
+  What makes it tractable: an email reply carries `In-Reply-To` and
+  `References` headers naming the `Message-ID` of the message being replied
+  to. So the confirmation reply's own `Message-ID` is the tracking token — no
+  need to put a sha or PR number in the body where a person might mangle it,
+  though a visible `PR #12` is a useful human-readable fallback if the headers
+  are lost.
+
+  The unsolved parts, roughly in order of difficulty:
+  - **Storing the mapping.** `Message-ID` → site + PR number + branch has to
+    persist between two separate Worker invocations. Cloudflare KV is the
+    natural fit; it is the first piece of state this system would own, which
+    is a real change to its shape.
+  - **What an edit means.** Replace the body wholesale, or apply the reply as
+    a patch? Wholesale is predictable and easy to reason about; patching is
+    what someone actually wants when they write "change the title to X".
+  - **Quoted text.** A reply usually quotes the original, so the quoted block
+    has to be stripped — the same class of problem as signature stripping, but
+    with far less standardisation than `-- `.
+  - **Commit onto the existing branch**, rather than opening a second PR.
+    `createDraftPost` currently always cuts a new branch, so this needs a
+    revise path alongside it.
+  - **Authentication still applies.** A reply is a fresh inbound message and
+    must pass the same allowlist and DKIM checks; knowing a `Message-ID` must
+    not be sufficient to edit a post.
+
+- **Make a failure bounce say why, when authentication succeeded.** A GitHub
+  failure already rejects the message rather than dropping it, so a bounce
+  arrives — but it says only `555 Message rejected`, the same as a security
+  rejection. That is deliberate for auth failures, where naming the failed
+  check tells an attacker something. Once a sender is authenticated, though,
+  there is no reason to be coy: "could not write to the repository" is
+  actionable where the generic message is not.
+
+  Lower priority than it looks: a build failure surfaces via Vercel on the PR
+  anyway. The gap is narrower — a failure that happens *before* a PR exists, so
+  Vercel never runs and nothing else tells you.
+
 - **HTML email → markdown**, via `turndown`. Currently rejected.
 - **Attachments** — images and PDFs committed to the repo, MIME allowlist, size
   cap. HEIC conversion and resizing are a separate problem, likely a GitHub
