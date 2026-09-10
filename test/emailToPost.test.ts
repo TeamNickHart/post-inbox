@@ -292,3 +292,103 @@ describe('what a rejected sender is told', () => {
     }
   })
 })
+
+describe('emailToPost — attachments', () => {
+  const assets = { directory: 'public/static/images', urlPrefix: '/static/images' }
+  const withAssets = { ...options, assets }
+
+  const photo = (filename = 'IMG_1234.jpg', mimeType = 'image/jpeg') => ({
+    filename,
+    mimeType,
+    bytes: new Uint8Array([0xff, 0xd8, 0xff]),
+  })
+
+  it('commits an attachment alongside the post', () => {
+    const result = emailToPost(genuine({ attachments: [photo()] }), withAssets)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.request.extraFiles).toHaveLength(1)
+    const [file] = result.request.extraFiles!
+    expect(file).toMatchObject({ path: 'public/static/images/a-real-post-1.jpg' })
+    expect('bytes' in file! && file.bytes.length).toBe(3)
+  })
+
+  it('names the file from the post slug, not the sender filename', () => {
+    const result = emailToPost(
+      genuine({ subject: 'My Summer Trip [correct-token]', attachments: [photo()] }),
+      withAssets,
+    )
+    if (!result.ok) throw new Error('expected success')
+    expect(result.request.extraFiles![0]!.path).toBe('public/static/images/my-summer-trip-1.jpg')
+  })
+
+  it('places a mentioned image where it was mentioned', () => {
+    const result = emailToPost(
+      genuine({ text: 'Here it is: IMG_1234.jpg\n\nMore text.', attachments: [photo()] }),
+      withAssets,
+    )
+    if (!result.ok) throw new Error('expected success')
+    expect(result.request.body).toContain('![IMG_1234](/static/images/a-real-post-1.jpg)')
+    expect(result.request.body).not.toContain('## Image')
+  })
+
+  it('appends an unmentioned image', () => {
+    const result = emailToPost(genuine({ attachments: [photo()] }), withAssets)
+    if (!result.ok) throw new Error('expected success')
+    expect(result.request.body).toContain('## Image')
+  })
+
+  it('refuses attachments when the site declares no assets block', () => {
+    // Not silently: the post is still created, and the dropped file is
+    // reported so it can be surfaced rather than lost without trace.
+    const result = emailToPost(genuine({ attachments: [photo()] }), options)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.request.extraFiles).toBeUndefined()
+    expect(result.rejectedAttachments).toHaveLength(1)
+    expect(result.rejectedAttachments[0]!.reason).toMatch(/not configured to accept/)
+  })
+
+  it('reports an unsupported type while still creating the post', () => {
+    const result = emailToPost(
+      genuine({ attachments: [photo('malware.zip', 'application/zip')] }),
+      withAssets,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.request.extraFiles).toBeUndefined()
+    expect(result.rejectedAttachments[0]!.reason).toMatch(/unsupported type/)
+  })
+
+  it('commits the good attachments and reports the bad ones together', () => {
+    const result = emailToPost(
+      genuine({ attachments: [photo(), photo('x.zip', 'application/zip')] }),
+      withAssets,
+    )
+    if (!result.ok) throw new Error('expected success')
+    expect(result.request.extraFiles).toHaveLength(1)
+    expect(result.rejectedAttachments).toHaveLength(1)
+  })
+
+  it('reports no rejections when there were no attachments', () => {
+    const result = emailToPost(genuine(), withAssets)
+    if (!result.ok) throw new Error('expected success')
+    expect(result.rejectedAttachments).toEqual([])
+    expect(result.request.extraFiles).toBeUndefined()
+  })
+
+  it('strips the signature before matching a filename mention', () => {
+    // A filename appearing only in a quoted signature must not count as a
+    // mention, or the image lands in the wrong place.
+    const result = emailToPost(
+      genuine({ text: 'A post.\n\n-- \nSent with IMG_1234.jpg\n', attachments: [photo()] }),
+      withAssets,
+    )
+    if (!result.ok) throw new Error('expected success')
+    expect(result.request.body).toContain('## Image')
+    expect(result.request.body).not.toContain('Sent with')
+  })
+})

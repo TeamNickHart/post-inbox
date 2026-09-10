@@ -1,4 +1,12 @@
+import {
+  attachmentsToCommit,
+  placeAttachments,
+  planAttachments,
+  type InboundAttachment,
+  type RejectedAttachment,
+} from './attachments.ts'
 import { parseHeaders } from './headers.ts'
+import { slugify } from './markdown.ts'
 import { authenticateSender, extractSubjectToken, type SenderAuthPolicy } from './senderAuth.ts'
 import { stripSignature } from './signature.ts'
 import type { DraftPostRequest } from './types.ts'
@@ -23,10 +31,17 @@ export interface InboundEmail {
   text?: string | null
   /** The message date, if the platform parsed one. */
   date?: Date | null
+  /** Attachments, as the platform parsed them. */
+  attachments?: InboundAttachment[]
 }
 
 export interface EmailToPostOptions {
   policy: SenderAuthPolicy
+  /**
+   * Where this site commits attachments. Omit to refuse them — an attachment
+   * then becomes a rejection note rather than silently vanishing.
+   */
+  assets?: { directory: string; urlPrefix: string }
   /** Strip an RFC 3676 signature block from the body. Defaults to true. */
   stripSignature?: boolean
   /** Commit the post with `draft: true`. Defaults to false. */
@@ -57,6 +72,12 @@ export type EmailToPostResult =
        * message. Worth logging: the strong controls were unavailable.
        */
       viaSubjectToken: boolean
+      /**
+       * Attachments that could not be committed, with the reason. Worth
+       * surfacing in the pull request: the post was created, but not
+       * everything the sender attached made it.
+       */
+      rejectedAttachments: RejectedAttachment[]
     }
   | {
       ok: false
@@ -138,14 +159,39 @@ export function emailToPost(
     }
   }
 
+  // Attachments are named from the post's slug, so the slug has to be settled
+  // before they can be planned.
+  const attachments = email.attachments ?? []
+  let finalBody = body
+  let rejectedAttachments: RejectedAttachment[] = []
+  let extraFiles: DraftPostRequest['extraFiles']
+
+  if (attachments.length > 0) {
+    if (!options.assets) {
+      rejectedAttachments = attachments.map((attachment) => ({
+        filename: attachment.filename,
+        reason: 'this site is not configured to accept attachments',
+      }))
+    } else {
+      const plan = planAttachments(attachments, slugify(title), options.assets)
+      rejectedAttachments = plan.rejected
+      if (plan.accepted.length > 0) {
+        finalBody = placeAttachments(body, plan.accepted).body
+        extraFiles = attachmentsToCommit(plan.accepted)
+      }
+    }
+  }
+
   return {
     ok: true,
     viaSubjectToken: auth.viaSubjectToken,
+    rejectedAttachments,
     request: {
       title,
-      body,
+      body: finalBody,
       ...(tags ? { tags } : {}),
       ...(summary ? { summary } : {}),
+      ...(extraFiles ? { extraFiles } : {}),
       date: email.date ?? (options.now ?? (() => new Date()))(),
       author: auth.sender,
       draft: options.draft === true,

@@ -27,11 +27,15 @@ export async function createDraftPost(
   const branch = await uniqueBranchName(github, owner, repo, `post-inbox/${date}-${slug}`)
 
   const parentSha = await github.getBranchHead(owner, repo, baseBranch)
+  // Attachments ride in the same commit as the post, so the PR is complete in
+  // one revision rather than showing a post that references files not yet
+  // present.
+  const files = [{ path, content }, ...(request.extraFiles ?? [])]
   const commitSha = await github.createCommit(
     owner,
     repo,
     parentSha,
-    [{ path, content }],
+    files,
     `Add draft post: ${request.title}`,
   )
   await github.createBranch(owner, repo, branch, commitSha)
@@ -72,11 +76,15 @@ async function uniqueBranchName(
 }
 
 function pullRequestBody(request: DraftPostRequest, path: string): string {
+  const attachments = request.extraFiles ?? []
   return [
     `Draft post created by [post-inbox](https://github.com/TeamNickHart/post-inbox) from ${request.author}.`,
     '',
     `- **File:** \`${path}\``,
     `- **Date:** ${formatDate(request.date)}`,
+    ...(attachments.length > 0
+      ? [`- **Attachments:** ${attachments.length} committed alongside the post`]
+      : []),
     '',
     'Review the Vercel preview, then merge to publish.',
   ].join('\n')

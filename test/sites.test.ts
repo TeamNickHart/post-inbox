@@ -218,6 +218,39 @@ describe('per-site GitHub and subject tokens', () => {
   })
 })
 
+describe('validateSites — the assets block', () => {
+  const withAssets = (assets: unknown) => validateSites({ sites: [{ ...site(), assets }] })
+
+  it('accepts the values the Tailwind starter uses', () => {
+    expect(
+      withAssets({ directory: 'public/static/images', urlPrefix: '/static/images' }),
+    ).toHaveLength(1)
+  })
+
+  it('accepts a site with no assets block, which refuses attachments', () => {
+    expect(validateSites({ sites: [site()] })[0]!.assets).toBeUndefined()
+  })
+
+  it('requires both fields together, since half a block commits files nowhere useful', () => {
+    expect(() => withAssets({ directory: 'public/static/images' })).toThrow(/urlPrefix/)
+    expect(() => withAssets({ urlPrefix: '/static/images' })).toThrow(/directory/)
+  })
+
+  it('rejects an absolute or escaping directory', () => {
+    expect(() => withAssets({ directory: '/etc', urlPrefix: '/x' })).toThrow(/repo-relative/)
+    expect(() => withAssets({ directory: '../../etc', urlPrefix: '/x' })).toThrow(/repo-relative/)
+  })
+
+  it('requires urlPrefix to be site-absolute', () => {
+    expect(() => withAssets({ directory: 'public/x', urlPrefix: 'static/x' })).toThrow(/start with/)
+  })
+
+  it('rejects a trailing slash, which would double up when joined', () => {
+    expect(() => withAssets({ directory: 'public/x/', urlPrefix: '/x' })).toThrow(/must not end/)
+    expect(() => withAssets({ directory: 'public/x', urlPrefix: '/x/' })).toThrow(/must not end/)
+  })
+})
+
 describe('validateSites — the author map', () => {
   // A name here becomes a filename in the site's data/authors directory, and
   // frontmatter naming an author that does not exist breaks the site build.
