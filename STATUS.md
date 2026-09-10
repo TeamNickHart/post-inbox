@@ -1,133 +1,131 @@
 # Status
 
-**Where things stand: the POC works end to end, on both paths, against the
-real blog repo.**
+**Working end to end on three real sites.** Email a site's address, get a pull
+request with a building preview.
 
-Last updated 2026-09-09.
+Last updated 2026-09-09. Worker version `50d25eb7`, 152 tests passing.
 
-## Working
+## What works
 
-| Thing | State |
+| | Verified by |
 |---|---|
-| HTTPS POST → draft PR | Working — verified end to end |
-| Email → draft PR | Working — verified end to end |
-| Sender allowlist | Working — a non-allowlisted sender is rejected |
-| Subject token | Now a conditional fallback — only required when SPF/DKIM cannot vouch for the message |
-| SPF/DKIM verdict check | Working — Gmail-sent mail arrives with passing verdicts |
-| Bearer-token auth on HTTPS | Working — 401 with no token, wrong token, and 405 on GET |
-| Vercel preview on the PR | Passing — a generated post does not break the site build |
-| Email signature stripping | Working — verified in production |
-| MDX escaping | Working — a markdown body is made safe to compile as MDX |
-| Tags and summary from email | Working — a `Tags:`/`Summary:` block at the top of the body |
-| Multiple senders per site | Working — comma- or space-separated |
-| Multi-site config | Working — `sites.jsonc` plus per-site secrets, routed by inbound address |
-| Guided setup | Working — `pnpm configure` and `pnpm configure:site <key>` |
-| Tests | 152 passing |
+| Email → draft PR | A real email to each of the three sites |
+| HTTPS POST → draft PR | `curl` against the deployed Worker |
+| Routing by inbound address | Three emails, three different repos, no syntax to remember |
+| Sender allowlist | A non-allowlisted sender is rejected |
+| SPF/DKIM verdicts | Cloudflare's own activity log shows `pass` on real mail |
+| Subject token fallback | Rejection with a wrong token; acceptance without one when DKIM passes |
+| Bearer auth per site | 401 with no token, a wrong token, and an unknown site |
+| Signature stripping | Byte-checked against a committed post |
+| Markdown → MDX | Vercel previews build on all three sites |
+| Tags and summary from email | A `Tags:`/`Summary:` block at the top of the body |
+| Guided setup | `pnpm configure`, `pnpm configure:site <key>` |
 
-Deployed as the `post-inbox` Worker, version `532667ce`, with one inbound
-address per site via Cloudflare Email Routing.
+Three sites configured, each with its own inbound address, sender allowlist and
+API token. One GitHub token covers all three, scoped to the org.
 
-**This repo is public**, so the real inbound addresses, Worker hostname and
-repo mappings live in `sites.jsonc`, which is gitignored. See
-`sites.example.jsonc`, and use `example.com` placeholders in anything
-committed.
+## Things learned the hard way
 
-Posts land in each site's `data/blog` as `.mdx` on a
-`post-inbox/<date>-<slug>` branch, committed with `draft: false` — see below.
+Each of these cost a debugging round. They are here so they cost nothing next
+time.
+
+- **This repo is public.** Real inbound addresses and the Worker hostname
+  reached `STATUS.md` and had to be scrubbed from git history. Use
+  `example.com` placeholders in everything committed. `sites.jsonc` is
+  gitignored; `pnpm check:secrets` blocks it from being staged, including via
+  `git add -f`.
+- **`pnpm deploy` silently does nothing** — pnpm reserves that name. Use
+  `pnpm run deploy`.
+- **A GitHub 404 means the token cannot see the repo**, not that the branch is
+  missing. GitHub answers 404 rather than 403 so as not to confirm a private
+  repo exists. Scope the PAT's resource owner to the **org**.
+- **`wrangler tail` shows live traffic only.** Start the tail, *then* send the
+  mail. Rejection reasons are logged; the sender only ever sees a generic
+  `555 Message rejected`.
+- **`draft: true` makes a post 404 on its own preview.** The Tailwind starter
+  filters drafts out of `allBlogs` in production builds, and a Vercel preview
+  is a production build. Posts are committed with `draft: false`; the PR is the
+  gate.
+- **The Workers runtime rejects a detached native `fetch`** with "Illegal
+  invocation". `GitHubClient` binds it to `globalThis`; a test injecting a
+  plain function will not catch a regression.
+- **A hand-entered list needs both separators.** A space-separated allowlist
+  stored as one string contains an `@`, passes a naive check, and then matches
+  nothing — every message rejected, silently.
+- **The PAT expires.** When posting starts failing with a 502, check that
+  first.
 
 ## Confirmed by building it, not assumed
 
-- **Frontmatter**: single-quoted YAML scalars, `tags` as an array. Matches
-  the existing posts.
-- **`draft: true` hides a post from its own preview.** The starter's slug page
-  filters drafts out of `allBlogs` and returns `notFound()`, so the post has no
-  page at all on a Vercel preview — not merely no listing entry. Posts are
-  therefore committed with `draft: false`; the PR is the gate.
-- **`authors` is omitted**, not set. `data/authors/` contains only
-  `default.mdx` and no existing post sets `authors:` — emitting an unknown
-  author key would reference a nonexistent file and break the build. The
-  field is only written when a real author file is resolved.
-- **SPF/DKIM verdicts do arrive.** The design doc's central security check
-  works as written. This was expected to fail
+- **Frontmatter**: single-quoted YAML scalars, `tags` as an array.
+- **`authors` is omitted** unless a real file in `data/authors` was resolved —
+  an unknown author key breaks the site build.
+- **SPF/DKIM verdicts do arrive.** This was expected to fail
   ([workerd#6740](https://github.com/cloudflare/workerd/issues/6740) reports
-  Email Workers receiving `arc=none` with no verdicts) — it did not, so
-  `REQUIRE_AUTH_RESULTS` can stay on. The fail-closed default costs nothing.
+  Email Workers receiving `arc=none` with no verdicts); mail from a major
+  provider carries passing verdicts, so the check works and
+  `REQUIRE_AUTH_RESULTS` stays on.
+- **MDX is not markdown.** `<https://example.com>` is valid markdown and a
+  build error in MDX. Escaping was verified against `@mdx-js/mdx` v3 with the
+  site's own remark plugins — a hand-rolled tag-balancing version failed on
+  14% of fuzzed inputs where the blunt one fails on none.
 - **Node 24**, not 20. Node 20 is EOL and outside Wrangler's supported range.
 
-## Known issues
+## Acceptance test
 
+`examples/acceptance-test/` is the canonical check: **send that email, get a
+draft PR that builds.** `pnpm test` diffs the pipeline against the recorded
+`expected.mdx`, so most regressions are caught without sending anything;
+`pnpm test:accept` regenerates it after a deliberate change.
+
+Its README insists on looking at the *rendered* preview, not just a green
+build. Mangled TeX compiles fine and renders as gibberish — which is the bug
+writing that test uncovered.
+
+## Known gaps
+
+- **Raw HTML in a post body does not render** — a deliberate consequence of
+  MDX escaping. Use `**bold**`. See the README.
+- **An unbalanced backtick can still produce a body that fails to build.** The
+  input markdown is already malformed in that case; CI is the backstop.
 - **HTML-only email is rejected** with the same generic bounce as a security
   failure, so the reason is invisible to the sender. Most clients send a
-  plaintext part alongside the HTML, so this is an edge case. Converting HTML
-  to markdown (`turndown`) is a real feature, not yet built.
-- **Raw HTML in a post body does not render** — a deliberate consequence of
-  MDX escaping. See the README.
-- **`POST_AS_DRAFT=true` makes the post 404 on the Vercel preview.** That is
-  the template's behaviour, not a bug here: contentlayer drops drafts from
-  production builds and a preview build is a production build. Left as an
-  option because merging unpublished is a legitimate workflow.
-- **An unbalanced backtick can still produce a body that fails to build.**
+  plaintext part alongside, so this is an edge case.
+- **`POST_AS_DRAFT=true` makes the post 404 on the preview.** Left as an option
+  because merging unpublished is a legitimate workflow.
+- **Test PRs are open** on all three repos from verification runs.
 
-`examples/acceptance-test/` is the canonical acceptance test — send that
-email, get a draft PR that builds. `pnpm test` diffs the pipeline against the
-recorded `expected.mdx`; `pnpm test:accept` regenerates it after a deliberate
-change.
-- **Test PRs are open** on the blog repo, with branches, from verification runs.
-- **The GitHub token must cover every configured repo.** A token scoped to one
-  repo makes the others invisible, and GitHub answers **404, not 403**, for a
-  repo a token cannot see — so the log reads like a missing branch when the
-  real problem is token scope. Scope the token to the org, or list every repo.
-- **The obsolete flat `ALLOWED_SENDERS` and `API_TOKEN` secrets are still set**
-  on the Worker and unused by the code. Delete them with
-  `npx wrangler secret delete <name>`.
+## Next
 
-## Not built yet
+**Shared CI across the site repos.** A reusable GitHub Actions workflow, since
+all three sites share one stack and a post can reach a repo without passing
+through post-inbox — the web editor, or a direct push. MDX compile check and
+frontmatter validation as blocking checks; tag linting and spellcheck as
+advisory. None of the three repos has any workflow or branch protection today.
+See §11 of the design doc.
 
-Scoped out of the POC deliberately — see `post-inbox-design.md`.
+**GitHub App instead of the PAT.** Removes the expiry landmine, scopes per-repo
+at the org level, and attributes commits to the app rather than to a person —
+which matters once someone else's post is being committed.
 
-**Blog-repo CI (separate task):** a shared reusable GitHub Actions workflow
-across all three site repos — MDX compile check and frontmatter validation as
-blocking checks, tag linting and spellcheck as advisory. Needed because a post
-can reach a repo without passing through post-inbox. See §11 of the design
-doc.
+**Rate limiting.** Cloudflare's native Worker-level limiting, per sender.
 
-**MVP, remaining:** a GitHub App instead of a fine-grained PAT, Cloudflare
-rate limiting, and hashing the per-site API tokens rather than comparing them
-in plaintext.
+**Hash the per-site API tokens** rather than comparing them in plaintext.
 
-**Backlog: per-site GitHub and subject tokens.** Both are global today, so one
-GitHub credential writes to every configured repo and one subject token covers
-every site. Per-site versions would mean a leaked token reaches one blog rather
-than all of them. Deliberately deferred: the GitHub App supersedes the PAT and
-scopes per-repo properly, and three PATs to create and rotate is real friction
-for a marginal gain. `pnpm configure` sets the global ones and
-`pnpm configure:site <key>` the per-site ones, so the split already exists in
-the tooling.
+## Backlog
 
-**Backlog:** per-sender author mapping. The `authorsBySender` field exists in
-the site schema and `authorFileForSender` resolves it, so mapping a family
-member's address to their own author page is a config change — but no site
-populates it yet, and it has not been exercised end to end.
-
-**Post-MVP:** attachments — images and PDFs committed to the repo, MIME
-allowlist, size cap. HEIC conversion and resizing are a separate problem,
-likely a GitHub Action on the PR rather than in the Worker.
-
-## Notes for future me
-
-- The GitHub PAT is fine-grained, scoped to `your-blog` only, with
-  Contents + Pull requests read/write. **It expires** — when posting starts
-  failing with a 502, check this first.
-- `pnpm deploy` does not work: pnpm reserves `deploy` as a builtin. Use
-  `pnpm run deploy`.
-- `wrangler tail` shows live traffic only. To see why an email was rejected,
-  start the tail and *then* send the mail. Rejection reasons are logged;
-  the sender only ever sees a generic `555 Message rejected`.
-- **This repo is public.** Never commit real inbound addresses, the Worker
-  hostname, or repo mappings — use `example.com` placeholders. Git history was
-  rewritten once (`git filter-repo --replace-text`) to purge a real address
-  and Worker URL that reached `STATUS.md`; a force-push followed.
-  `pnpm check:secrets` now blocks the obvious cases, including `git add -f`.
-- The Workers runtime rejects a detached native `fetch` with
-  "Illegal invocation". `GitHubClient` binds it to `globalThis` for this
-  reason; a test injecting a plain function will not catch a regression here.
+- **Per-site GitHub and subject tokens.** Both are global today, so one GitHub
+  credential writes to every repo. Deferred because the GitHub App supersedes
+  the PAT and scopes properly, and three PATs to rotate is friction for a
+  marginal gain. The tooling split already anticipates it.
+- **Per-sender author mapping.** `authorsBySender` is in the site schema and
+  `authorFileForSender` resolves it, so mapping a family member's address to
+  their own author page is a config change rather than a schema change. No site
+  populates it yet and it has not been exercised end to end.
+- **HTML email → markdown**, via `turndown`. Currently rejected.
+- **Attachments** — images and PDFs committed to the repo, MIME allowlist, size
+  cap. HEIC conversion and resizing are a separate problem, likely a GitHub
+  Action on the PR rather than in the Worker, since `sharp` needs native
+  binaries a Worker cannot run.
+- **The launch post**, written through the tool itself. See §9 of the design
+  doc — this works now.
