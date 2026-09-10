@@ -22,9 +22,9 @@ Last updated 2026-09-09.
 | Multiple senders per site | Working — comma- or space-separated |
 | Multi-site config | Working — `sites.jsonc` plus per-site secrets, routed by inbound address |
 | Guided setup | Working — `pnpm configure` and `pnpm configure:site <key>` |
-| Tests | 147 passing |
+| Tests | 152 passing |
 
-Deployed as the `post-inbox` Worker, version `89d8adf7`, with one inbound
+Deployed as the `post-inbox` Worker, version `532667ce`, with one inbound
 address per site via Cloudflare Email Routing.
 
 **This repo is public**, so the real inbound addresses, Worker hostname and
@@ -73,10 +73,10 @@ email, get a draft PR that builds. `pnpm test` diffs the pipeline against the
 recorded `expected.mdx`; `pnpm test:accept` regenerates it after a deliberate
 change.
 - **Test PRs are open** on the blog repo, with branches, from verification runs.
-- **`weishart`'s allowlist was set to one malformed entry** — two addresses
-  space-separated became a single string, back when the configure script split
-  on commas only. Re-run `pnpm configure:site weishart`; the Worker now refuses
-  such a value loudly rather than matching nothing.
+- **The GitHub token must cover every configured repo.** A token scoped to one
+  repo makes the others invisible, and GitHub answers **404, not 403**, for a
+  repo a token cannot see — so the log reads like a missing branch when the
+  real problem is token scope. Scope the token to the org, or list every repo.
 - **The obsolete flat `ALLOWED_SENDERS` and `API_TOKEN` secrets are still set**
   on the Worker and unused by the code. Delete them with
   `npx wrangler secret delete <name>`.

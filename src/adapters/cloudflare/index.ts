@@ -1,6 +1,6 @@
 import PostalMime from 'postal-mime'
 import { createDraftPost } from '../../core/createDraftPost.ts'
-import { GitHubClient } from '../../core/github.ts'
+import { GitHubClient, GitHubError } from '../../core/github.ts'
 import { emailToPost } from '../../core/emailToPost.ts'
 import { authorFileForSender } from '../../core/sites.ts'
 import type { DraftPostRequest } from '../../core/types.ts'
@@ -77,12 +77,23 @@ export default {
     // A site may map specific senders to their own author page.
     const authorFile = authorFileForSender(site, decision.request.author)
 
-    const result = await createDraftPost(
-      { ...decision.request, ...(authorFile ? { authorFile } : {}) },
-      site,
-      githubClient(env),
-    )
-    console.log(`Created draft PR #${result.pullRequestNumber} on ${site.key}: ${result.pullRequestUrl}`)
+    try {
+      const result = await createDraftPost(
+        { ...decision.request, ...(authorFile ? { authorFile } : {}) },
+        site,
+        githubClient(env),
+      )
+      console.log(
+        `Created draft PR #${result.pullRequestNumber} on ${site.key}: ${result.pullRequestUrl}`,
+      )
+    } catch (error) {
+      // Without this, an authenticated message that fails at the GitHub step
+      // throws out of the handler: Email Routing reports a worker exception,
+      // the sender gets no bounce, and the post is silently lost. Rejecting
+      // instead means the sender is told the message did not land.
+      console.error(`Failed to create post for ${site.key}: ${describeGitHubFailure(error)}`)
+      message.setReject('Message rejected')
+    }
   },
 
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -134,10 +145,35 @@ export default {
       const result = await createDraftPost(parsed.request, target.site, githubClient(env))
       return json(result, 201)
     } catch (error) {
-      console.error('Failed to create draft post', error)
+      console.error(`Failed to create post for ${target.site.key}: ${describeGitHubFailure(error)}`)
       return json({ error: 'Failed to create draft post' }, 502)
     }
   },
+}
+
+/**
+ * Turn a GitHub failure into something actionable in the logs.
+ *
+ * A 404 from the git data API usually means the token cannot see the repo
+ * rather than that the ref is missing — GitHub answers 404 instead of 403 so
+ * as not to confirm a private repo exists. That distinction is worth spelling
+ * out, because "not found" sends you looking for a missing branch when the
+ * real problem is token scope.
+ */
+function describeGitHubFailure(error: unknown): string {
+  if (error instanceof GitHubError) {
+    if (error.status === 404) {
+      return `${error.message} — the GitHub token probably cannot access this repository (GitHub answers 404, not 403, for repositories a token cannot see). Check the token's repository access.`
+    }
+    if (error.status === 403) {
+      return `${error.message} — the token reached the repository but lacks a required permission (Contents and Pull requests both need read/write).`
+    }
+    if (error.status === 401) {
+      return `${error.message} — the token is invalid or expired.`
+    }
+    return `${error.message}: ${error.body.slice(0, 200)}`
+  }
+  return String(error)
 }
 
 function githubClient(env: Env): GitHubClient {
