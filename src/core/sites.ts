@@ -148,15 +148,28 @@ export function secretsForSite(
 ): SiteSecrets {
   const prefix = secretPrefix(site.key)
 
+  // Split on commas or whitespace. Tolerating both matters because the value
+  // is hand-entered: a space-separated list stored as one string would contain
+  // an `@`, look superficially valid, and match no sender at all — a silent
+  // failure where every message is rejected.
   const raw = env[`${prefix}_ALLOWED_SENDERS`]
   const allowedSenders = (raw ?? '')
-    .split(',')
+    .split(/[,\s]+/)
     .map((address) => address.trim().toLowerCase())
     .filter(Boolean)
 
   if (allowedSenders.length === 0) {
     throw new ConfigError(
       `site ${site.key} has no allowed senders: set ${prefix}_ALLOWED_SENDERS`,
+    )
+  }
+
+  // An entry with no `@` can never match an envelope sender, so it is a
+  // misconfiguration worth naming rather than a rule that silently never fires.
+  const malformed = allowedSenders.filter((address) => !address.includes('@'))
+  if (malformed.length > 0) {
+    throw new ConfigError(
+      `site ${site.key} has malformed entries in ${prefix}_ALLOWED_SENDERS: ${malformed.join(', ')}`,
     )
   }
 

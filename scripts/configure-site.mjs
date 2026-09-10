@@ -11,6 +11,8 @@ import {
   confirm,
   existingSecretNames,
   generateToken,
+  looksLikeAddress,
+  parseAddressList,
   prompt,
   putSecret,
   readSiteKeys,
@@ -43,25 +45,38 @@ console.log(`\nSecrets for site "${requested}" (prefix ${prefix}).\n`)
 // --- names real people's addresses so it stays out of git.
 const sendersName = `${prefix}_ALLOWED_SENDERS`
 console.log(`${sendersName} — envelope addresses allowed to post to this site.`)
-console.log('  Comma-separated. Required: an empty allowlist rejects everything.')
+console.log('  Several are fine, separated by commas or spaces.')
+console.log('  Required: an empty allowlist rejects everything.')
 console.log('  This is a real access control — a sender not listed here cannot post,')
 console.log('  even with passing DKIM.\n')
+console.log('    e.g.  someone@example.com, someone-else@example.com\n')
 
 if (await shouldSet(sendersName)) {
-  const raw = await prompt('  Addresses: ')
-  const senders = raw
-    .split(',')
-    .map((address) => address.trim())
-    .filter(Boolean)
+  const senders = parseAddressList(await prompt('  Addresses: '))
+  const invalid = senders.filter((address) => !looksLikeAddress(address))
 
   if (senders.length === 0) {
     console.error('  Nothing entered; skipped. The site cannot accept mail until this is set.\n')
-  } else if (senders.some((address) => !address.includes('@'))) {
-    console.error(`  Not all of those look like addresses: ${senders.join(', ')}. Skipped.\n`)
-  } else if (putSecret(sendersName, senders.join(','))) {
-    console.log(`  Set ${sendersName} to ${senders.length} address(es).\n`)
+  } else if (invalid.length > 0) {
+    // Refuse rather than store something that would match no sender at all.
+    console.error(`\n  These do not look like email addresses:\n`)
+    for (const address of invalid) console.error(`    ${address}`)
+    console.error('\n  Nothing was changed. Separate addresses with a comma or a space.\n')
   } else {
-    console.error('  wrangler failed; see above.\n')
+    // Echo what will be stored: an allowlist that matches nothing is a silent
+    // failure, so it is worth seeing before it is set.
+    console.log(`\n  Allowing ${senders.length} sender(s):`)
+    for (const address of senders) console.log(`    ${address}`)
+
+    if (await confirm('\n  Set this allowlist?', true)) {
+      if (putSecret(sendersName, senders.join(','))) {
+        console.log(`  Set ${sendersName}.\n`)
+      } else {
+        console.error('  wrangler failed; see above.\n')
+      }
+    } else {
+      console.log('  Skipped.\n')
+    }
   }
 } else {
   console.log(`  Kept the existing ${sendersName}.\n`)

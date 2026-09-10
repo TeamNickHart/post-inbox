@@ -94,6 +94,32 @@ export async function prompt(question) {
   }
 }
 
+/**
+ * Split a user-entered address list on commas *or* whitespace.
+ *
+ * Accepting both matters: "a@x.com b@y.com" is the natural way to type a list,
+ * and an earlier version split on commas only, silently storing the whole
+ * string as one address that contained an `@` and so passed validation. The
+ * allowlist then matched nothing and every message was rejected.
+ */
+export function parseAddressList(raw) {
+  return raw
+    .split(/[,\s]+/)
+    .map((address) => address.trim())
+    .filter(Boolean)
+}
+
+/**
+ * Is this a plausible email address?
+ *
+ * Deliberately not RFC 5322 — that grammar accepts things no mail client will
+ * send, and the goal here is only to catch a typo or a mis-typed list before
+ * it becomes a secret that silently matches nothing.
+ */
+export function looksLikeAddress(address) {
+  return /^[^\s@,]+@[^\s@,]+\.[^\s@,.]{2,}$/.test(address)
+}
+
 /** Ask a yes/no question. */
 export async function confirm(question, defaultYes = false) {
   const answer = await prompt(`${question} ${defaultYes ? '[Y/n]' : '[y/N]'} `)

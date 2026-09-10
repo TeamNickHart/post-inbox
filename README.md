@@ -143,7 +143,7 @@ To do it by hand instead:
 
 ```bash
 npx wrangler secret put GITHUB_TOKEN
-npx wrangler secret put MYSITE_ALLOWED_SENDERS   # comma-separated, required
+npx wrangler secret put MYSITE_ALLOWED_SENDERS   # comma- or space-separated
 npx wrangler secret put MYSITE_API_TOKEN         # HTTPS path, optional
 npx wrangler secret put EMAIL_SUBJECT_TOKEN      # optional fallback
 ```

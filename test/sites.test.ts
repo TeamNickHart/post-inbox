@@ -96,6 +96,30 @@ describe('secrets', () => {
     expect(secrets.apiToken).toBe('tok')
   })
 
+  it('accepts a space-separated allowlist', () => {
+    // The configure script offers both separators, and a hand-set secret may
+    // use either. Splitting on commas alone stored the whole string as one
+    // address that contained an `@` — so it passed validation and then matched
+    // no sender at all.
+    const secrets = secretsForSite(site(), {
+      MYSITE_ALLOWED_SENDERS: 'a@example.com b@example.com',
+    })
+    expect(secrets.allowedSenders).toEqual(['a@example.com', 'b@example.com'])
+  })
+
+  it('accepts a mix of commas and spaces', () => {
+    const secrets = secretsForSite(site(), {
+      MYSITE_ALLOWED_SENDERS: 'a@example.com, b@example.com  c@example.com',
+    })
+    expect(secrets.allowedSenders).toHaveLength(3)
+  })
+
+  it('rejects an entry that could never match a sender', () => {
+    expect(() =>
+      secretsForSite(site(), { MYSITE_ALLOWED_SENDERS: 'a@example.com, notanaddress' }),
+    ).toThrow(/malformed/)
+  })
+
   it('treats a missing allowlist as a misconfiguration, not allow-everyone', () => {
     expect(() => secretsForSite(site(), {})).toThrow(/MYSITE_ALLOWED_SENDERS/)
     expect(() => secretsForSite(site(), { MYSITE_ALLOWED_SENDERS: ' , ' })).toThrow(ConfigError)

@@ -19,9 +19,10 @@ Last updated 2026-09-09.
 | Email signature stripping | Working — verified in production |
 | MDX escaping | Working — a markdown body is made safe to compile as MDX |
 | Tags and summary from email | Working — a `Tags:`/`Summary:` block at the top of the body |
+| Multiple senders per site | Working — comma- or space-separated |
 | Multi-site config | Working — `sites.jsonc` plus per-site secrets, routed by inbound address |
 | Guided setup | Working — `pnpm configure` and `pnpm configure:site <key>` |
-| Tests | 144 passing |
+| Tests | 147 passing |
 
 Deployed as the `post-inbox` Worker, version `89d8adf7`, with one inbound
 address per site via Cloudflare Email Routing.
@@ -72,9 +73,10 @@ email, get a draft PR that builds. `pnpm test` diffs the pipeline against the
 recorded `expected.mdx`; `pnpm test:accept` regenerates it after a deliberate
 change.
 - **Test PRs are open** on the blog repo, with branches, from verification runs.
-- **`weishart` is configured in `sites.jsonc` but has no secrets set**, so mail
-  to its address is rejected with "no allowed senders". Run
-  `pnpm configure:site weishart` to finish it.
+- **`weishart`'s allowlist was set to one malformed entry** — two addresses
+  space-separated became a single string, back when the configure script split
+  on commas only. Re-run `pnpm configure:site weishart`; the Worker now refuses
+  such a value loudly rather than matching nothing.
 - **The obsolete flat `ALLOWED_SENDERS` and `API_TOKEN` secrets are still set**
   on the Worker and unused by the code. Delete them with
   `npx wrangler secret delete <name>`.
