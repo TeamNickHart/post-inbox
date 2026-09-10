@@ -35,6 +35,19 @@ export interface EmailToPostOptions {
   now?: () => Date
 }
 
+/**
+ * Why a message was turned away.
+ *
+ * The distinction is a security one, not a tidiness one. An `auth` failure
+ * must be reported to the sender generically: naming the check that failed
+ * tells someone probing the system whether an address is allowlisted, or
+ * whether their guessed token was the wrong length. A `content` failure
+ * happens only *after* the sender is authenticated, so there is nobody left to
+ * withhold information from — and a sender who wrote an unusable message needs
+ * to be told what was wrong with it.
+ */
+export type RejectionKind = 'auth' | 'content'
+
 export type EmailToPostResult =
   | {
       ok: true
@@ -45,7 +58,17 @@ export type EmailToPostResult =
        */
       viaSubjectToken: boolean
     }
-  | { ok: false; reason: string }
+  | {
+      ok: false
+      kind: RejectionKind
+      /** For our logs. Never sent to the sender verbatim when kind is 'auth'. */
+      reason: string
+      /**
+       * Safe to send to an authenticated sender, when there is something
+       * actionable to say. Absent for `auth` failures.
+       */
+      senderMessage?: string
+    }
 
 /**
  * Decide whether an inbound email may become a post, and if so, what post.
@@ -67,21 +90,53 @@ export function emailToPost(
     },
     options.policy,
   )
-  if (!auth.ok) return { ok: false, reason: auth.reason }
+  // Everything below this line has passed authentication, so failures from
+  // here on may explain themselves to the sender.
+  if (!auth.ok) return { ok: false, kind: 'auth', reason: auth.reason }
 
   const { title } = extractSubjectToken(email.subject)
-  if (!title) return { ok: false, reason: 'empty subject after removing token' }
+  if (!title) {
+    return {
+      ok: false,
+      kind: 'content',
+      reason: 'empty subject after removing token',
+      senderMessage: 'the subject line became empty once the token was removed, so the post has no title',
+    }
+  }
 
   const raw = email.text?.trim()
-  if (!raw) return { ok: false, reason: 'no plaintext body' }
+  if (!raw) {
+    return {
+      ok: false,
+      kind: 'content',
+      reason: 'no plaintext body',
+      // The common cause by far: a client composing HTML with no text part.
+      senderMessage:
+        'the message had no plain-text body — HTML-only mail is not supported, so send the post as plain text',
+    }
+  }
 
   const stripped = (options.stripSignature === false ? raw : stripSignature(raw)).trim()
-  if (!stripped) return { ok: false, reason: 'body was empty after stripping the signature' }
+  if (!stripped) {
+    return {
+      ok: false,
+      kind: 'content',
+      reason: 'body was empty after stripping the signature',
+      senderMessage: 'the body was empty once the signature was removed',
+    }
+  }
 
   // Metadata the subject line cannot carry: `Tags:` and `Summary:` lines at
   // the top of the body.
   const { tags, summary, body } = parseHeaders(stripped)
-  if (!body) return { ok: false, reason: 'body was empty after removing the header block' }
+  if (!body) {
+    return {
+      ok: false,
+      kind: 'content',
+      reason: 'body was empty after removing the header block',
+      senderMessage: 'the message contained only a Tags/Summary block and no post body',
+    }
+  }
 
   return {
     ok: true,

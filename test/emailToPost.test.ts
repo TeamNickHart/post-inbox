@@ -216,3 +216,79 @@ describe('emailToPost — malformed messages', () => {
     if (result.ok) expect(result.request.date).toEqual(now)
   })
 })
+
+describe('what a rejected sender is told', () => {
+  // The security-relevant half of this: an authentication failure must not
+  // explain itself. Naming the failed check tells someone probing the system
+  // whether an address is allowlisted, or whether a guessed token was close.
+  const authFailures: [string, InboundEmail][] = [
+    ['sender not allowlisted', genuine({ envelopeFrom: 'stranger@example.com' })],
+    ['wrong subject token', genuine({ subject: 'A Post [wrong-token]' })],
+    [
+      'no passing verdicts and no token',
+      genuine({ subject: 'A Post', authenticationResults: 'spf=fail; dkim=none; dmarc=fail' }),
+    ],
+  ]
+
+  for (const [label, email] of authFailures) {
+    it(`says nothing to the sender about: ${label}`, () => {
+      const result = emailToPost(email, options)
+      expect(result).toMatchObject({ ok: false, kind: 'auth' })
+      if (!result.ok) {
+        expect(result.senderMessage).toBeUndefined()
+        // The reason is still logged for us.
+        expect(result.reason.length).toBeGreaterThan(0)
+      }
+    })
+  }
+
+  // Content failures happen only after authentication, so there is nobody left
+  // to withhold information from — and the sender needs to know what to fix.
+  it('tells an authenticated sender that html-only mail is unsupported', () => {
+    const result = emailToPost(genuine({ text: null }), options)
+    expect(result).toMatchObject({ ok: false, kind: 'content' })
+    if (!result.ok) {
+      expect(result.senderMessage).toMatch(/plain.text/i)
+      expect(result.senderMessage).toMatch(/HTML/i)
+    }
+  })
+
+  it('tells an authenticated sender the subject left no title', () => {
+    const result = emailToPost(genuine({ subject: '[correct-token]' }), options)
+    expect(result).toMatchObject({ ok: false, kind: 'content' })
+    if (!result.ok) expect(result.senderMessage).toMatch(/title/i)
+  })
+
+  it('accepts a body that is only a signature block, rather than emptying it', () => {
+    // `stripSignature` leaves such a body alone: a lone delimiter is more
+    // likely a horizontal rule than an empty post. So this succeeds — the
+    // "empty after stripping" branch is unreachable from a real message, and
+    // exists as a guard rather than a case to report.
+    const result = emailToPost(genuine({ text: '-- \nJust a sig\n' }), options)
+    expect(result.ok).toBe(true)
+  })
+
+  it('tells an authenticated sender the body was only a header block', () => {
+    const result = emailToPost(genuine({ text: 'Tags: AI\n' }), options)
+    expect(result).toMatchObject({ ok: false, kind: 'content' })
+    if (!result.ok) expect(result.senderMessage).toMatch(/body/i)
+  })
+
+  it('keeps every sender-facing message to a single short line', () => {
+    // It travels through other people\'s mail software as an SMTP rejection,
+    // where a long or multi-line reason may be truncated.
+    const contentFailures = [
+      genuine({ text: null }),
+      genuine({ subject: '[correct-token]' }),
+      genuine({ text: 'Tags: AI\n' }),
+      genuine({ text: '   \n\n  \n' }),
+    ]
+    for (const email of contentFailures) {
+      const result = emailToPost(email, options)
+      if (!result.ok && result.senderMessage) {
+        expect(result.senderMessage).not.toContain('\n')
+        expect(result.senderMessage.length).toBeLessThan(160)
+      }
+    }
+  })
+})

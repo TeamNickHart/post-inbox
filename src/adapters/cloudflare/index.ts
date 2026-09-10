@@ -61,9 +61,12 @@ export default {
     )
 
     if (!decision.ok) {
-      // Logged for us; the sender only ever sees a generic rejection.
       console.error(`Rejected inbound email for ${site.key}: ${decision.reason}`)
-      message.setReject('Message rejected')
+      // An authentication failure stays generic: naming the check that failed
+      // tells someone probing the system what to try next. A content failure
+      // has already cleared authentication, so there is nobody to withhold
+      // from, and the sender needs to know what to fix.
+      message.setReject(bounceMessage(decision.senderMessage))
       return
     }
 
@@ -90,8 +93,14 @@ export default {
       // throws out of the handler: Email Routing reports a worker exception,
       // the sender gets no bounce, and the post is silently lost. Rejecting
       // instead means the sender is told the message did not land.
-      console.error(`Failed to create post for ${site.key}: ${describeGitHubFailure(error)}`)
-      message.setReject('Message rejected')
+      const failure = describeGitHubFailure(error)
+      console.error(`Failed to create post for ${site.key}: ${failure}`)
+      // The sender is authenticated, so say that the post did not land. The
+      // detail stays in our logs: a GitHub error can name private repos and
+      // is not the sender's problem to read.
+      message.setReject(
+        bounceMessage('the message was accepted but the post could not be created — the site owner has the details'),
+      )
     }
   },
 
@@ -152,6 +161,18 @@ export default {
       return json({ error: 'Failed to create draft post' }, 502)
     }
   },
+}
+
+/**
+ * Build the text a rejected sender sees.
+ *
+ * Cloudflare puts this in the SMTP rejection, which the sending mail server
+ * turns into a bounce. Kept short and on one line: it travels through other
+ * people's software, and a long or multi-line reason may be truncated.
+ */
+function bounceMessage(senderMessage?: string): string {
+  if (!senderMessage) return 'Message rejected'
+  return `Message rejected: ${senderMessage}`
 }
 
 /**

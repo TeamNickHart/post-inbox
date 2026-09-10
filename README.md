@@ -293,6 +293,21 @@ unpublished and flip the flag in a separate commit later. Expect the preview to
 404 in that case; check the diff instead. The HTTPS path can also pass
 `"draft": true` per request.
 
+### What a bounce tells you
+
+A rejected message comes back as an SMTP rejection, which your mail server turns
+into a bounce. What it says depends on *why*:
+
+- **Authentication failures stay generic** — just `Message rejected`. Naming the
+  check that failed would tell someone probing the system whether an address is
+  allowlisted, or whether a guessed token was close. The real reason is in the
+  Worker logs (`npx wrangler tail`).
+- **Everything after authentication explains itself.** A sender who got past the
+  allowlist and DKIM is not an attacker, so a message that cannot become a post
+  says why: no plain-text body, a subject that left no title, a body that was
+  only a `Tags:` block. A failure writing to GitHub says the post did not land,
+  with the detail kept in the logs.
+
 ### Email signatures
 
 A signature delimited by the standard `-- ` line is stripped from the body.

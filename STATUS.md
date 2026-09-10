@@ -3,7 +3,7 @@
 **Working end to end on three real sites.** Email a site's address, get a pull
 request with a building preview.
 
-Last updated 2026-09-10. Worker version `7c56f23f`, 160 tests passing.
+Last updated 2026-09-10. Worker version `2ea06cad`, 168 tests passing.
 
 ## What works
 
@@ -21,6 +21,7 @@ Last updated 2026-09-10. Worker version `7c56f23f`, 160 tests passing.
 | Tags and summary from email | A `Tags:`/`Summary:` block at the top of the body |
 | Guided setup | `pnpm configure`, `pnpm configure:site <key>` |
 | Per-site GitHub and subject tokens | Resolved per site, falling back to the global value |
+| Bounce messages | Generic for auth failures, specific once the sender is authenticated |
 
 Three sites configured, each with its own inbound address, sender allowlist and
 API token. One GitHub token covers all three, scoped to the org.
@@ -89,9 +90,6 @@ writing that test uncovered.
   MDX escaping. Use `**bold**`. See the README.
 - **An unbalanced backtick can still produce a body that fails to build.** The
   input markdown is already malformed in that case; CI is the backstop.
-- **HTML-only email is rejected** with the same generic bounce as a security
-  failure, so the reason is invisible to the sender. Most clients send a
-  plaintext part alongside, so this is an edge case.
 - **`POST_AS_DRAFT=true` makes the post 404 on the preview.** Left as an option
   because merging unpublished is a legitimate workflow.
 - **Test PRs are open** on all three repos from verification runs.
@@ -194,18 +192,6 @@ per-installation.
     `Message-ID` must never be sufficient to change a post.
   - **Attachments are a prerequisite** for the case that motivates this most —
     forgotten images. See the attachments item below.
-
-- **Make a failure bounce say why, when authentication succeeded.** A GitHub
-  failure already rejects the message rather than dropping it, so a bounce
-  arrives — but it says only `555 Message rejected`, the same as a security
-  rejection. That is deliberate for auth failures, where naming the failed
-  check tells an attacker something. Once a sender is authenticated, though,
-  there is no reason to be coy: "could not write to the repository" is
-  actionable where the generic message is not.
-
-  Lower priority than it looks: a build failure surfaces via Vercel on the PR
-  anyway. The gap is narrower — a failure that happens *before* a PR exists, so
-  Vercel never runs and nothing else tells you.
 
 - **HTML email → markdown**, via `turndown`. Currently rejected.
 - **Attachments** — images and PDFs committed to the repo, MIME allowlist, size
