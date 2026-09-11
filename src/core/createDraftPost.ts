@@ -71,12 +71,23 @@ async function uniqueBranchName(
   throw new Error(`Could not find an unused branch name based on ${preferred}`)
 }
 
+/**
+ * The pull request description.
+ *
+ * Deliberately names no email address. `request.author` is the sender's real
+ * address, and a pull request body is permanent, readable by every
+ * collaborator, and quoted into notification emails and Actions logs — so it is
+ * the wrong place for one even on a private repo. The author *name*, when the
+ * site resolved one, is already in the post's frontmatter and is enough for a
+ * reviewer to know whose post this is.
+ */
 function pullRequestBody(request: DraftPostRequest, path: string): string {
   return [
-    `Draft post created by [post-inbox](https://github.com/TeamNickHart/post-inbox) from ${request.author}.`,
+    'Draft post created by [post-inbox](https://github.com/TeamNickHart/post-inbox).',
     '',
     `- **File:** \`${path}\``,
     `- **Date:** ${formatDate(request.date)}`,
+    ...(request.authorFile ? [`- **Author:** ${request.authorFile}`] : []),
     '',
     'Review the Vercel preview, then merge to publish.',
   ].join('\n')
