@@ -202,7 +202,15 @@ function toInboundAttachments(attachments: Email['attachments']): InboundAttachm
       bytes = new Uint8Array(attachment.content)
     }
 
-    inbound.push({ filename: attachment.filename, mimeType: attachment.mimeType, bytes })
+    inbound.push({
+      filename: attachment.filename,
+      mimeType: attachment.mimeType,
+      bytes,
+      // RFC 2387 multipart/related membership: how a client marks an image
+      // embedded in the body. Not `disposition`, which reads "attachment" for
+      // embedded and attached parts alike.
+      ...(attachment.related ? { related: true } : {}),
+    })
   }
 
   return inbound

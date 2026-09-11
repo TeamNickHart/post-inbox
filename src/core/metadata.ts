@@ -109,6 +109,12 @@ function stripJpeg(bytes: Uint8Array): StripResult {
       removed.push('XMP')
     } else if (marker === JPEG_COM) {
       removed.push('comment')
+    } else if (marker === JPEG_APP2 && !isIccProfile(segment)) {
+      // APP2 carries both the ICC colour profile and Apple's MPF
+      // (Multi-Picture Format) index, which can point at a second embedded
+      // image. They share a marker, so they have to be told apart by the
+      // segment's own identifier rather than by marker number.
+      removed.push('MPF')
     } else if (marker > JPEG_APP2 && marker <= 0xef) {
       // APP3..APP15: Photoshop resources, maker notes, and similar.
       removed.push(`APP${marker - JPEG_APP0}`)
@@ -121,6 +127,22 @@ function stripJpeg(bytes: Uint8Array): StripResult {
 
   if (offset < bytes.length) out.push(bytes.subarray(offset))
   return { bytes: concat(out), removed: dedupe(removed) }
+}
+
+/**
+ * Is this APP2 segment an ICC colour profile?
+ *
+ * Kept when it is: dropping the profile of a wide-gamut photo visibly shifts
+ * its colour. Anything else in APP2 — in practice Apple's MPF index — is not
+ * colour data and is removed.
+ */
+function isIccProfile(segment: Uint8Array): boolean {
+  const marker = 'ICC_PROFILE'
+  if (segment.length < 4 + marker.length) return false
+  for (let index = 0; index < marker.length; index++) {
+    if (segment[4 + index] !== marker.charCodeAt(index)) return false
+  }
+  return true
 }
 
 function isExif(segment: Uint8Array): boolean {

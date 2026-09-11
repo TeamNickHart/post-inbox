@@ -195,3 +195,117 @@ describe('placeAttachments', () => {
     expect(result.body).toContain('## Image')
   })
 })
+
+describe('placeAttachments — client-written placeholders', () => {
+  const plan = (attachments: InboundAttachment[], slug = 'my-post') =>
+    planAttachments(attachments, slug, paths).accepted
+
+  it('consumes the whole [image: name] marker, not just the filename', () => {
+    // Taken byte-exact from a real Gmail message: the marker sits on its own
+    // line. Replacing only the filename inside it left the brackets and the
+    // `image:` label behind as literal text in the committed post.
+    const body = [
+      '# embedded image',
+      '',
+      'a line of text before the image',
+      '[image: IMG_1234.jpg]',
+      'a line of text after the image',
+    ].join('\n')
+
+    const result = placeAttachments(body, plan([file()]))
+    expect(result.inlined).toBe(1)
+    expect(result.body).toContain('![IMG_1234](/static/images/my-post-1.jpg)')
+    expect(result.body).not.toContain('[image:')
+    expect(result.body).not.toContain(']]')
+    // The surrounding prose is untouched.
+    expect(result.body).toContain('a line of text before the image')
+    expect(result.body).toContain('a line of text after the image')
+  })
+
+  it('handles the bracketed form without a label', () => {
+    const result = placeAttachments('before\n[IMG_1234.jpg]\nafter', plan([file()]))
+    expect(result.body).toBe('before\n![IMG_1234](/static/images/my-post-1.jpg)\nafter')
+  })
+
+  it('handles an angle-bracket cid reference', () => {
+    const result = placeAttachments('see <cid:IMG_1234.jpg> here', plan([file()]))
+    expect(result.body).toBe('see ![IMG_1234](/static/images/my-post-1.jpg) here')
+  })
+
+  it('still handles a bare filename mention, for plain-text mail', () => {
+    const result = placeAttachments('see IMG_1234.jpg here', plan([file()]))
+    expect(result.body).toBe('see ![IMG_1234](/static/images/my-post-1.jpg) here')
+  })
+
+  it('is tolerant of whitespace inside the marker', () => {
+    const result = placeAttachments('[ image :  IMG_1234.jpg  ]', plan([file()]))
+    expect(result.inlined).toBe(1)
+    // The marker is gone, replaced by the image. Asserting the absence of `[`
+    // would be wrong: markdown image syntax contains one.
+    expect(result.body).toBe('![IMG_1234](/static/images/my-post-1.jpg)')
+    expect(result.body).not.toContain('image :')
+  })
+
+  it('appends an embedded image whose client wrote no placeholder', () => {
+    // Apple Mail typically writes none. The image must not be lost just
+    // because there is nowhere obvious to put it.
+    const embedded = planAttachments(
+      [{ ...file(), related: true }],
+      'my-post',
+      paths,
+    ).accepted
+    const result = placeAttachments('A post with no marker at all.', embedded)
+    expect(result.inlined).toBe(0)
+    expect(result.body).toContain('## Image')
+  })
+
+  it('does not consume a marker inside a code span', () => {
+    const body = 'Run `[image: IMG_1234.jpg]` verbatim.'
+    const result = placeAttachments(body, plan([file()]))
+    expect(result.body).toContain('`[image: IMG_1234.jpg]`')
+    expect(result.body).toContain('## Image')
+  })
+})
+
+describe('planAttachments — metadata is stripped on the way in', () => {
+  it('removes GPS before the bytes are ever committed', () => {
+    // Done at upload rather than only in the site build, so coordinates never
+    // reach a repository whose posts are public.
+    const u16 = (n: number) => [n & 0xff, (n >> 8) & 0xff]
+    const u32 = (n: number) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff]
+    const tiff = [
+      0x49, 0x49, ...u16(0x2a), ...u32(8), ...u16(2),
+      ...u16(0x0112), ...u16(3), ...u32(1), ...u16(6), 0, 0,
+      ...u16(0x8825), ...u16(4), ...u32(1), ...u32(0),
+      ...u32(0),
+    ]
+    const payload = [0x45, 0x78, 0x69, 0x66, 0, 0, ...tiff]
+    const length = payload.length + 2
+    const withGps = new Uint8Array([
+      0xff, 0xd8,
+      0xff, 0xe1, (length >> 8) & 0xff, length & 0xff, ...payload,
+      0xff, 0xda, 0, 2, 0xff, 0xd9,
+    ])
+
+    const accepted = planAttachments(
+      [file({ bytes: withGps })],
+      'my-post',
+      paths,
+    ).accepted
+
+    expect(accepted[0]!.strippedMetadata).toContain('GPS')
+    expect(accepted[0]!.bytes).not.toEqual(withGps)
+  })
+
+  it('leaves a format it cannot clean byte-identical', () => {
+    const bytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
+    const accepted = planAttachments(
+      [file({ filename: 'photo.heic', mimeType: 'image/heic', bytes })],
+      'my-post',
+      paths,
+    ).accepted
+
+    expect(accepted[0]!.bytes).toEqual(bytes)
+    expect(accepted[0]!.strippedMetadata).toBeUndefined()
+  })
+})

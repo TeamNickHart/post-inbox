@@ -1,4 +1,5 @@
 import type { FileToCommit } from './github.ts'
+import { stripImageMetadata } from './metadata.ts'
 
 /**
  * Email attachments becoming files in the site repo.
@@ -52,6 +53,17 @@ export interface InboundAttachment {
   /** MIME type as the client declared it. Also untrusted, but checkable. */
   mimeType: string
   bytes: Uint8Array
+  /**
+   * True when the part belongs to a `multipart/related` group — RFC 2387, how
+   * every mail client marks an image embedded in the message body rather than
+   * merely attached to it.
+   *
+   * Note this is *not* `Content-Disposition: inline`. A real Gmail message
+   * carrying one embedded and one attached image reports `disposition:
+   * "attachment"` for **both**, and only the embedded one has `related: true`.
+   * Keying placement to the disposition would therefore detect nothing.
+   */
+  related?: boolean
 }
 
 /** An attachment accepted for committing. */
@@ -64,6 +76,10 @@ export interface AcceptedAttachment {
   /** The sender's original filename, for matching mentions in the body. */
   originalFilename: string
   bytes: Uint8Array
+  /** Whether the part was embedded in the body. See `InboundAttachment`. */
+  related?: boolean
+  /** Metadata removed on the way in, for the pull request body. */
+  strippedMetadata?: string[]
 }
 
 export interface RejectedAttachment {
@@ -139,12 +155,20 @@ export function planAttachments(
     const name = `${slug}-${index}${type.extension}`
     index++
 
+    // Location and device metadata is removed here rather than only in the
+    // site's build: a photo carries GPS, and a repo whose posts are public is
+    // the wrong place for it. Doing it at upload means the coordinates never
+    // reach the repository even if a later build step is skipped or fails.
+    const cleaned = stripImageMetadata(attachment.bytes, attachment.mimeType)
+
     accepted.push({
       path: `${paths.directory}/${name}`,
       url: `${paths.urlPrefix}/${name}`,
       kind: type.kind,
       originalFilename: attachment.filename,
-      bytes: attachment.bytes,
+      bytes: cleaned.bytes,
+      ...(attachment.related ? { related: true } : {}),
+      ...(cleaned.removed.length > 0 ? { strippedMetadata: cleaned.removed } : {}),
     })
   }
 
@@ -165,10 +189,19 @@ function formatBytes(count: number): string {
 /**
  * Place attachments in the post body.
  *
- * An image whose filename the author mentioned goes where they mentioned it —
- * that mention is the only placement signal a plaintext email offers, since
- * there is no true inline embedding the way HTML mail has. Everything else is
- * appended under a heading.
+ * Two signals, in order:
+ *
+ *  1. **A placeholder the client left in the plaintext part.** A client that
+ *     embeds an image writes a marker where it sat — Gmail writes
+ *     `[image: name.jpg]` on its own line. Consuming the whole marker is what
+ *     matters: replacing only the filename inside it leaves the brackets and
+ *     the `image:` label behind as literal text.
+ *  2. **A bare filename mention**, for genuinely plain-text mail where the
+ *     author typed the name themselves.
+ *
+ * An embedded part (`related`) that matches neither is still appended rather
+ * than dropped, so an image is never lost just because its client wrote no
+ * placeholder — Apple Mail typically writes none at all.
  *
  * Documents are always appended as links, even when mentioned: replacing "see
  * report.pdf" with a link reads worse than a sentence followed by one.
@@ -184,7 +217,7 @@ export function placeAttachments(
   const trailing: AcceptedAttachment[] = []
 
   for (const attachment of accepted) {
-    const mention = findMention(text, attachment.originalFilename)
+    const mention = findPlaceholder(text, attachment.originalFilename)
     if (attachment.kind === 'image' && mention !== null) {
       // Alt text is the original filename minus its extension: a poor
       // description, but better than empty, and the author can improve it in
@@ -225,17 +258,29 @@ export function placeAttachments(
 }
 
 /**
- * Find where the author mentioned a filename, if they did.
+ * Find where an image belongs in the body, if the text says.
+ *
+ * Prefers a client-written placeholder wrapping the filename — `[image:
+ * name.jpg]`, `[cid:name.jpg]`, `<name.jpg>` — over a bare mention, and returns
+ * the span of the *whole* marker so it is consumed rather than left around the
+ * inserted image. The wrapper forms are matched generically rather than per
+ * client: the bracketed-label convention is shared, only the label differs.
  *
  * Matched case-insensitively and only outside code spans and existing links, so
- * a filename inside a code block is left as written. The whole mention is
- * replaced, so "see IMG_1234.jpg here" becomes "see ![IMG_1234](...) here".
+ * a filename inside a code block is left as written.
  */
-function findMention(text: string, filename: string): { start: number; end: number } | null {
+function findPlaceholder(text: string, filename: string): { start: number; end: number } | null {
   if (!filename) return null
 
   const escaped = filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const pattern = new RegExp(escaped, 'i')
+  // A bracketed marker with an optional `label:` prefix, then the bare name as
+  // a fallback. Ordered, so the widest match wins.
+  const pattern = new RegExp(
+    `\\[[ \\t]*(?:[A-Za-z-]+[ \\t]*:[ \\t]*)?${escaped}[ \\t]*\\]` +
+      `|<[ \\t]*(?:cid:[ \\t]*)?${escaped}[ \\t]*>` +
+      `|${escaped}`,
+    'i',
+  )
 
   // Only search the unprotected parts, but report offsets in the full string.
   // A fully-parenthesised split pattern puts the delimiters at odd indices, so
