@@ -220,10 +220,24 @@ per-installation.
     been checked against a real camera file the way JPEG has.
   - **HEIC/HEIF are not sanitised at all** — an ISO base media container where
     metadata is structural rather than a removable segment, so `stripsCleanly`
-    reports false and the bytes pass through untouched, GPS included. This is
-    the real hole: an unconverted iPhone photo keeps its coordinates. Closing it
-    means either a real container parser or refusing HEIC until the build step
-    converts it.
+    reports false and the bytes pass through untouched, GPS included.
+
+    How exposed this actually leaves us depends on the sending client, which is
+    narrower than first assumed. **Gmail's web composer converts HEIC to JPEG on
+    send**: a real message composed with a HEIC attachment arrived as two
+    `image/jpeg` parts, the converted one renamed to a lowercase `.jpeg` at full
+    5712x4284 sensor resolution. So that path never reaches the HEIC branch at
+    all.
+
+    Worth knowing, though: **the conversion is a repack, not a sanitisation.**
+    The converted JPEG still carried GPS, the device model, 25 stacked APP1
+    segments, an MPF index and `urn:iso:std` blocks — all of which our own
+    stripper then removed. Gmail changing the container is not a privacy
+    safeguard.
+
+    Untested: clients that attach HEIC as-is. iOS Mail is the one to check.
+    Closing the hole properly means either a real ISO-BMFF parser or refusing
+    HEIC until the build step converts it.
 
   Also unverified: that a **portrait** photo's `Orientation = 6` or `8` survives.
   The only real camera file tested was upright, and the orientation tests use
