@@ -243,6 +243,31 @@ per-installation.
   The only real camera file tested was upright, and the orientation tests use
   synthetic EXIF. If it does not survive, portrait photos render sideways.
 
+- **Place images by MIME part order, for clients that write no placeholder.**
+  macOS Mail composes `multipart/mixed` with images interleaved between text
+  parts — "HEIC image:", image, "JPG image:", image — and writes no
+  `[image: ...]` marker anywhere. `postal-mime` flattens that to a single text
+  blob, so the interleaving is lost and every image is appended at the bottom
+  under one heading, away from the label it belonged to.
+
+  Recovering it means walking the MIME tree in order rather than reading
+  `email.text`, which `postal-mime`'s top-level API does not expose. A real
+  feature, not a patch.
+
+  Worth recording what the two real clients actually send, because no single
+  field identifies an embedded image:
+
+  | | Gmail web | macOS Mail |
+  |---|---|---|
+  | container | `multipart/related` | `multipart/mixed` |
+  | `disposition` | `attachment` | `inline` |
+  | `related` | `true` | absent |
+  | `contentId` | present | absent |
+  | placeholder in text | `[image: name]` | none |
+
+  So `disposition` alone would miss Gmail, and `related` alone would miss
+  macOS Mail. The filename-mention and append fallbacks are what carry both.
+
 - **HTML email → markdown**, via `turndown`. Currently rejected. The real
   message carries an HTML part alongside the plaintext one, so the input is
   already there — it is only ignored.
