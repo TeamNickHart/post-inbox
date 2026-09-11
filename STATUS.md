@@ -201,7 +201,37 @@ per-installation.
   - **Attachments are a prerequisite** for the case that motivates this most —
     forgotten images. See the attachments item below.
 
-- **HTML email → markdown**, via `turndown`. Currently rejected.
+- **Further image metadata sanitation at upload.** GPS, device model,
+  timestamps, maker notes, XMP and the embedded thumbnail are stripped from
+  JPEG today, with orientation deliberately preserved and the ICC profile kept
+  for colour fidelity. What survives on a real iPhone photo, checked segment by
+  segment:
+
+  - **MPF (Multi-Picture Format), 88 bytes.** An Apple multi-image index, and it
+    survives *by accident*: the strip rule covers `APP3..APP15`, and MPF sits in
+    APP2 alongside ICC. It can carry offsets to a second embedded image. Should
+    be dropped — distinguish it from ICC by the segment's identifier string
+    rather than by marker number.
+  - **ICC colour profile, 552 bytes.** `Display P3`, which names a device class
+    rather than a device. Worth keeping: dropping it visibly shifts the colour
+    of a wide-gamut photo. A build step that converts to sRGB could then drop
+    it safely.
+  - **PNG and WebP** have only their known metadata chunks removed. Neither has
+    been checked against a real camera file the way JPEG has.
+  - **HEIC/HEIF are not sanitised at all** — an ISO base media container where
+    metadata is structural rather than a removable segment, so `stripsCleanly`
+    reports false and the bytes pass through untouched, GPS included. This is
+    the real hole: an unconverted iPhone photo keeps its coordinates. Closing it
+    means either a real container parser or refusing HEIC until the build step
+    converts it.
+
+  Also unverified: that a **portrait** photo's `Orientation = 6` or `8` survives.
+  The only real camera file tested was upright, and the orientation tests use
+  synthetic EXIF. If it does not survive, portrait photos render sideways.
+
+- **HTML email → markdown**, via `turndown`. Currently rejected. The real
+  message carries an HTML part alongside the plaintext one, so the input is
+  already there — it is only ignored.
 - **Attachments** — images and PDFs committed to the repo, MIME allowlist, size
   cap. HEIC conversion and resizing are a separate problem, likely a GitHub
   Action on the PR rather than in the Worker, since `sharp` needs native
