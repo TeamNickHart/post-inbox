@@ -131,10 +131,9 @@ per-installation.
 
 ## Backlog
 
-- **Polish the initial setup, and make the secrets consistent.** Setup has grown
-  by accretion and now spans two different secret stores with different tools,
-  which is the kind of thing that is obvious while building it and baffling six
-  months later:
+- **Polish the initial setup: `pnpm setup` and `pnpm doctor`.** Setup has grown
+  by accretion and now spans two secret stores with two different tools, which
+  is obvious while building it and baffling six months later:
 
   | Secret | Store | Tool | Set by |
   |---|---|---|---|
@@ -142,18 +141,37 @@ per-installation.
   | `<SITE>_API_TOKEN`, per-site overrides | Cloudflare | `wrangler secret put` | `pnpm configure:site` |
   | `RESEND_API_KEY`, `AUTHOR_EMAIL_MAP` | GitHub repo | `gh secret set` | `pnpm configure:notify` |
 
-  Worth doing: one `pnpm setup` that walks the whole thing in order rather than
-  three commands to remember; consistent naming (some secrets are prefixed by
-  site, some global, and the reason is not obvious from the name); a
-  `pnpm doctor` that reports what is set, what is missing and what has drifted
-  from `sites.jsonc`, since secrets cannot be read back and today the only way
-  to find a gap is to send mail and watch it fail; and a decision on whether
-  `RESEND_API_KEY` belongs at org level, which needs `admin:org` and would make
-  it one place to rotate rather than three.
+  **Name by intent, not by destination.** `config:github` / `config:cloudflare`
+  was considered and rejected: it makes the store obvious, but scatters one
+  logical task across two commands — adding a site would mean running both and
+  remembering which secrets live where, which is knowledge the tool should hold.
+  It also bakes in a destination that is likely to move: if `RESEND_API_KEY`
+  goes org-level, or the notification moves back into the Worker,
+  `config:github` becomes a lie. Each command should instead *say* which store
+  it is writing to as it runs.
+
+  ```
+  pnpm setup              # the front door: walks everything, in order
+  pnpm setup:site <key>   # one site, whichever stores it needs
+  pnpm setup:notify       # notifications
+  pnpm doctor             # what is set, missing, or drifted
+  ```
+
+  `pnpm setup` matters most: there is no single entry point today, so a fork has
+  to read the README to discover three commands and the order to run them in.
+
+  **`pnpm doctor` is the piece most worth building.** Secrets cannot be read
+  back, so today the only way to find a gap is to send mail and watch it fail —
+  which is exactly how two real problems were found the slow way: an
+  `API_TOKEN` mismatch that produced a bare 401, and a `WEISHART_ALLOWED_SENDERS`
+  value that was one malformed string matching no sender at all. Doctor should
+  report, per site, which Cloudflare secrets exist, which GitHub secrets exist,
+  what `sites.jsonc` expects, and where those disagree — without printing a
+  single secret value.
 
   Also: `<SITE>_ALLOWED_SENDERS` secrets are now unused, since the allowlist is
   derived from `authorsBySender`. They are still set on the Worker and should be
-  deleted.
+  deleted — `pnpm doctor` would flag exactly this.
 
 - **Reply on success, with a link to the preview.** Confirming that a post
   landed, and where to look at it, closes the loop — right now success is
