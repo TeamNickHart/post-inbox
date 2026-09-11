@@ -1,0 +1,84 @@
+# Tell the author their post is ready to look at.
+#
+# Copy this into a blog repo as `.github/workflows/notify-author.yml`.
+#
+# It runs on the *deployment status* rather than on the pull request, because
+# that is the only point at which the preview URL exists: post-inbox opens the
+# PR before Vercel has built anything, so a notification sent at PR time can
+# only link the PR, not the preview. Waiting means the link works when the
+# author clicks it.
+#
+# Two secrets, set by `pnpm configure:notify` in the post-inbox repo:
+#   RESEND_API_KEY    the Resend credential
+#   AUTHOR_EMAIL_MAP  {"author-name": "address"} — derived from sites.jsonc
+#
+# No email address is ever committed, logged, or written into a PR. The post's
+# frontmatter carries only the author *name*; the address is looked up from the
+# secret at send time and masked in output.
+name: Notify author
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify:
+    # Only successful previews, and only for branches post-inbox created — so a
+    # hand-made PR does not generate mail.
+    if: >
+      github.event.deployment_status.state == 'success' &&
+      startsWith(github.event.deployment.ref, 'post-inbox/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.deployment.ref }}
+          # Only the tip is needed; the post is in this commit.
+          fetch-depth: 1
+
+      - name: Find the post and its author
+        id: post
+        env:
+          REF: ${{ github.event.deployment.ref }}
+        run: |
+          set -euo pipefail
+
+          # The post added on this branch. Compare against the default branch
+          # rather than the previous commit: a branch may hold several commits
+          # once reply-to-append exists.
+          git fetch --depth=1 origin "${GITHUB_BASE_REF:-main}" 2>/dev/null || true
+          post="$(git diff --name-only --diff-filter=A FETCH_HEAD..HEAD -- 'data/blog/*.mdx' | head -1)"
+
+          if [ -z "$post" ]; then
+            echo "No new post on this branch; nothing to notify about."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # `authors: ['jenny']` -> jenny. Absent means the site default, which
+          # has no mapped address, so there is nobody to tell.
+          author="$(sed -n "s/^authors: *\[['\"]\([^'\"]*\)['\"].*/\1/p" "$post" | head -1)"
+          title="$(sed -n "s/^title: *['\"]\(.*\)['\"] *$/\1/p" "$post" | head -1)"
+
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "path=$post" >> "$GITHUB_OUTPUT"
+          echo "author=$author" >> "$GITHUB_OUTPUT"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+          echo "Post: $post (author: ${author:-none})"
+
+      - name: Send the notification
+        if: steps.post.outputs.found == 'true'
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          AUTHOR_EMAIL_MAP: ${{ secrets.AUTHOR_EMAIL_MAP }}
+          MAIL_FROM: ${{ vars.NOTIFY_FROM }}
+          AUTHOR: ${{ steps.post.outputs.author }}
+          TITLE: ${{ steps.post.outputs.title }}
+          POST_PATH: ${{ steps.post.outputs.path }}
+          PREVIEW_URL: ${{ github.event.deployment_status.environment_url }}
+          REF: ${{ github.event.deployment.ref }}
+        run: node .github/scripts/notify-author.mjs
