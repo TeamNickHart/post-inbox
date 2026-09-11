@@ -127,7 +127,11 @@ describe('placeAttachments', () => {
     planAttachments(attachments, slug, paths).accepted
 
   it('leaves the body alone when there are no attachments', () => {
-    expect(placeAttachments('The body.', [])).toEqual({ body: 'The body.', inlined: 0 })
+    expect(placeAttachments('The body.', [])).toEqual({
+      body: 'The body.',
+      inlined: 0,
+      placements: [],
+    })
   })
 
   it('replaces a mentioned filename with the image, in place', () => {
@@ -193,6 +197,36 @@ describe('placeAttachments', () => {
     expect(result.inlined).toBe(1)
     expect(result.body).toContain('![IMG_1234](/static/images/my-post-1.jpg)')
     expect(result.body).toContain('## Image')
+  })
+})
+
+describe('placeAttachments — which rule fired', () => {
+  const plan = (attachments: InboundAttachment[], slug = 'my-post') =>
+    planAttachments(attachments, slug, paths).accepted
+
+  it('reports a consumed wrapper as `placeholder`', () => {
+    const result = placeAttachments('before\n[image: IMG_1234.jpg]\nafter', plan([file()]))
+    expect(result.placements).toEqual([
+      { filename: 'IMG_1234.jpg', rule: 'placeholder', related: false },
+    ])
+  })
+
+  it('reports a bare filename as `mention`', () => {
+    const result = placeAttachments('see IMG_1234.jpg here', plan([file()]))
+    expect(result.placements[0]!.rule).toBe('mention')
+  })
+
+  it('reports an image with nowhere to go as `appended`', () => {
+    // The signal worth watching in production: a client that always lands here
+    // is one whose convention we do not yet read.
+    const result = placeAttachments('No mention at all.', plan([file()]))
+    expect(result.placements[0]!.rule).toBe('appended')
+  })
+
+  it('records whether the part was multipart/related', () => {
+    const embedded = planAttachments([{ ...file(), related: true }], 'my-post', paths).accepted
+    const result = placeAttachments('No mention.', embedded)
+    expect(result.placements[0]!.related).toBe(true)
   })
 })
 

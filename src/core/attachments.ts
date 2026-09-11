@@ -87,6 +87,24 @@ export interface RejectedAttachment {
   reason: string
 }
 
+/**
+ * Which rule placed an image, for logging.
+ *
+ * Recorded rather than inferred because the cascade is deliberately
+ * client-agnostic: no mail client is identified, and different clients populate
+ * different subsets of the standard signals. Logging which rule fired is how we
+ * find out from real mail whether one cascade keeps holding, or whether some
+ * client keeps falling through to the append fallback — evidence for adding a
+ * rule, instead of guessing at a client matrix up front.
+ */
+export interface Placement {
+  filename: string
+  /** `placeholder` and `mention` put the image in place; `appended` did not. */
+  rule: 'placeholder' | 'mention' | 'appended'
+  /** Whether the part was `multipart/related`, which only some clients set. */
+  related: boolean
+}
+
 export interface AttachmentPlan {
   accepted: AcceptedAttachment[]
   rejected: RejectedAttachment[]
@@ -209,16 +227,22 @@ function formatBytes(count: number): string {
 export function placeAttachments(
   body: string,
   accepted: AcceptedAttachment[],
-): { body: string; inlined: number } {
-  if (accepted.length === 0) return { body, inlined: 0 }
+): { body: string; inlined: number; placements: Placement[] } {
+  if (accepted.length === 0) return { body, inlined: 0, placements: [] }
 
   let text = body
   let inlined = 0
   const trailing: AcceptedAttachment[] = []
+  const placements: Placement[] = []
 
   for (const attachment of accepted) {
     const mention = findPlaceholder(text, attachment.originalFilename)
     if (attachment.kind === 'image' && mention !== null) {
+      placements.push({
+        filename: attachment.originalFilename,
+        rule: mention.kind,
+        related: attachment.related === true,
+      })
       // Alt text is the original filename minus its extension: a poor
       // description, but better than empty, and the author can improve it in
       // the pull request.
@@ -226,6 +250,11 @@ export function placeAttachments(
       text = text.slice(0, mention.start) + `![${alt}](${attachment.url})` + text.slice(mention.end)
       inlined++
     } else {
+      placements.push({
+        filename: attachment.originalFilename,
+        rule: 'appended',
+        related: attachment.related === true,
+      })
       trailing.push(attachment)
     }
   }
@@ -254,7 +283,7 @@ export function placeAttachments(
     text = `${text.replace(/\s+$/, '')}\n\n${sections.join('\n')}\n`
   }
 
-  return { body: text, inlined }
+  return { body: text, inlined, placements }
 }
 
 /**
@@ -269,7 +298,10 @@ export function placeAttachments(
  * Matched case-insensitively and only outside code spans and existing links, so
  * a filename inside a code block is left as written.
  */
-function findPlaceholder(text: string, filename: string): { start: number; end: number } | null {
+function findPlaceholder(
+  text: string,
+  filename: string,
+): { start: number; end: number; kind: 'placeholder' | 'mention' } | null {
   if (!filename) return null
 
   const escaped = filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -293,7 +325,15 @@ function findPlaceholder(text: string, filename: string): { start: number; end: 
     const part = parts[index]!
     if (index % 2 === 0) {
       const match = pattern.exec(part)
-      if (match) return { start: cursor + match.index, end: cursor + match.index + match[0].length }
+      if (match) {
+        // A match longer than the bare filename means a wrapper was consumed.
+        const kind = match[0].length > filename.length ? 'placeholder' : 'mention'
+        return {
+          start: cursor + match.index,
+          end: cursor + match.index + match[0].length,
+          kind,
+        }
+      }
     }
     cursor += part.length
   }

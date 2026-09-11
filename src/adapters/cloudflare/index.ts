@@ -73,6 +73,14 @@ export default {
       return
     }
 
+    for (const placement of decision.placements) {
+      // Which rule fired, so real mail tells us whether the client-agnostic
+      // cascade keeps holding. See `Placement` in core/attachments.ts.
+      console.log(
+        `Placed ${placement.filename} on ${site.key} by ${placement.rule} (related=${placement.related})`,
+      )
+    }
+
     for (const rejected of decision.rejectedAttachments) {
       // The post is still created; the sender is told which files did not make
       // it, since a silently dropped photo is worse than a noisy one.

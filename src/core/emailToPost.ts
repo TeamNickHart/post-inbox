@@ -3,6 +3,7 @@ import {
   placeAttachments,
   planAttachments,
   type InboundAttachment,
+  type Placement,
   type RejectedAttachment,
 } from './attachments.ts'
 import { parseHeaders } from './headers.ts'
@@ -78,6 +79,8 @@ export type EmailToPostResult =
        * everything the sender attached made it.
        */
       rejectedAttachments: RejectedAttachment[]
+      /** Which rule placed each image. For logging; see `Placement`. */
+      placements: Placement[]
     }
   | {
       ok: false
@@ -164,6 +167,7 @@ export function emailToPost(
   const attachments = email.attachments ?? []
   let finalBody = body
   let rejectedAttachments: RejectedAttachment[] = []
+  let placements: Placement[] = []
   let extraFiles: DraftPostRequest['extraFiles']
 
   if (attachments.length > 0) {
@@ -176,7 +180,9 @@ export function emailToPost(
       const plan = planAttachments(attachments, slugify(title), options.assets)
       rejectedAttachments = plan.rejected
       if (plan.accepted.length > 0) {
-        finalBody = placeAttachments(body, plan.accepted).body
+        const placed = placeAttachments(body, plan.accepted)
+        finalBody = placed.body
+        placements = placed.placements
         extraFiles = attachmentsToCommit(plan.accepted)
       }
     }
@@ -186,6 +192,7 @@ export function emailToPost(
     ok: true,
     viaSubjectToken: auth.viaSubjectToken,
     rejectedAttachments,
+    placements,
     request: {
       title,
       body: finalBody,
