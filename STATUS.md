@@ -243,6 +243,37 @@ per-installation.
   - **Attachments are a prerequisite** for the case that motivates this most —
     forgotten images. See the attachments item below.
 
+- **Email bare media into the asset library.** Needs discussion before
+  building; the easy path is small and the interesting parts are not.
+
+  The shape: an email carrying attachments and no real body becomes a commit
+  that adds files to the site's assets directory, with no post. Most of the
+  machinery exists — the MIME allowlist, size caps, slug-based naming, metadata
+  stripping and binary commits are all already there.
+
+  What has to be settled first:
+
+  - **What counts as "no body"?** A signature-only message and a subject with no
+    body are both *already* rejections with their own bounce text, so the trigger
+    has to be unambiguous or it collides with them. An explicit `Assets:` header
+    or a reserved subject prefix is safer than inferring from an empty body.
+  - **Where do the files go, and under what names?** Post attachments are named
+    from the post slug, which does not exist here. Sender-supplied names are
+    attacker-controlled and collide in a flat directory — the reason slug-based
+    naming exists at all.
+  - **Auto-rebasing open PRs is the genuinely complex part.** If assets land on
+    the main branch while several post PRs are open, those PRs are behind.
+    Rebasing means force-pushing branches that may be under review, and each
+    rebase triggers a fresh preview build — so one asset email could kick off
+    several deploys at once. A post that references an image added afterwards
+    still will not see it until merged, so the rebase does not even buy what it
+    looks like it buys.
+  - **It overlaps with reply-to-append**, which solves "add media to a post" more
+    precisely: a reply targets one pull request instead of mutating every open
+    one. If reply-to-append lands first, the remaining use for this is seeding
+    the asset library independently of any post — worth having, but a smaller
+    feature than it first appears.
+
 - **HTML email → markdown**, via `turndown`. Currently rejected.
 - **Attachments** — images and PDFs committed to the repo, MIME allowlist, size
   cap. HEIC conversion and resizing are a separate problem, likely a GitHub
