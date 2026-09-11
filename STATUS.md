@@ -131,6 +131,30 @@ per-installation.
 
 ## Backlog
 
+- **Polish the initial setup, and make the secrets consistent.** Setup has grown
+  by accretion and now spans two different secret stores with different tools,
+  which is the kind of thing that is obvious while building it and baffling six
+  months later:
+
+  | Secret | Store | Tool | Set by |
+  |---|---|---|---|
+  | `GITHUB_TOKEN`, `EMAIL_SUBJECT_TOKEN` | Cloudflare | `wrangler secret put` | `pnpm configure` |
+  | `<SITE>_API_TOKEN`, per-site overrides | Cloudflare | `wrangler secret put` | `pnpm configure:site` |
+  | `RESEND_API_KEY`, `AUTHOR_EMAIL_MAP` | GitHub repo | `gh secret set` | `pnpm configure:notify` |
+
+  Worth doing: one `pnpm setup` that walks the whole thing in order rather than
+  three commands to remember; consistent naming (some secrets are prefixed by
+  site, some global, and the reason is not obvious from the name); a
+  `pnpm doctor` that reports what is set, what is missing and what has drifted
+  from `sites.jsonc`, since secrets cannot be read back and today the only way
+  to find a gap is to send mail and watch it fail; and a decision on whether
+  `RESEND_API_KEY` belongs at org level, which needs `admin:org` and would make
+  it one place to rotate rather than three.
+
+  Also: `<SITE>_ALLOWED_SENDERS` secrets are now unused, since the allowlist is
+  derived from `authorsBySender`. They are still set on the Worker and should be
+  deleted.
+
 - **Reply on success, with a link to the preview.** Confirming that a post
   landed, and where to look at it, closes the loop — right now success is
   silent and you go hunting for the PR.
