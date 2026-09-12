@@ -199,6 +199,7 @@ export function emailToPost(
       ...(tags ? { tags } : {}),
       ...(summary ? { summary } : {}),
       ...(extraFiles ? { extraFiles } : {}),
+      ...(rejectedAttachments.length > 0 ? { rejectedAttachments } : {}),
       date: email.date ?? (options.now ?? (() => new Date()))(),
       author: auth.sender,
       draft: options.draft === true,

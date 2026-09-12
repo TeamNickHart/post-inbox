@@ -26,6 +26,16 @@ export interface DraftPostRequest {
   /** Extra files to include in the same commit, e.g. attachments. */
   extraFiles?: FileToCommit[]
   /**
+   * Attachments that could not be committed, as `filename — reason` notes.
+   *
+   * Surfaced in the pull request body rather than bounced. The post itself
+   * succeeded, so rejecting the message would throw the writing away to report
+   * a dropped photo — the wrong trade. But saying nothing is worse: a silently
+   * dropped attachment is invisible to the sender, which is exactly what
+   * happened before this existed.
+   */
+  rejectedAttachments?: { filename: string; reason: string }[]
+  /**
    * Value for the post's `draft` frontmatter field.
    *
    * Defaults to false. The pull request is already the gate that stops a

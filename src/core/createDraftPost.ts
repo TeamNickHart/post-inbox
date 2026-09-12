@@ -75,17 +75,41 @@ async function uniqueBranchName(
   throw new Error(`Could not find an unused branch name based on ${preferred}`)
 }
 
+/**
+ * The pull request description.
+ *
+ * Deliberately names no email address. `request.author` is the sender's real
+ * address, and a pull request body is permanent, readable by every
+ * collaborator, and quoted into notification emails and Actions logs — so it is
+ * the wrong place for one even on a private repo. The author *name*, when the
+ * site resolved one, is already in the post's frontmatter and is enough for a
+ * reviewer to know whose post this is.
+ */
 function pullRequestBody(request: DraftPostRequest, path: string): string {
   const attachments = request.extraFiles ?? []
+  const rejected = request.rejectedAttachments ?? []
+
   return [
-    `Draft post created by [post-inbox](https://github.com/TeamNickHart/post-inbox) from ${request.author}.`,
+    'Draft post created by [post-inbox](https://github.com/TeamNickHart/post-inbox).',
     '',
     `- **File:** \`${path}\``,
     `- **Date:** ${formatDate(request.date)}`,
+    ...(request.authorFile ? [`- **Author:** ${request.authorFile}`] : []),
     ...(attachments.length > 0
       ? [`- **Attachments:** ${attachments.length} committed alongside the post`]
       : []),
     '',
+    // Listed rather than logged: the sender is not watching the Worker's logs,
+    // and a dropped attachment they never hear about is the failure this avoids.
+    ...(rejected.length > 0
+      ? [
+          '> [!WARNING]',
+          `> ${rejected.length === 1 ? 'An attachment was' : 'Some attachments were'} not committed:`,
+          '>',
+          ...rejected.map((item) => `> - \`${item.filename}\` — ${item.reason}`),
+          '',
+        ]
+      : []),
     'Review the Vercel preview, then merge to publish.',
   ].join('\n')
 }
