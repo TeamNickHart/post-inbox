@@ -29,9 +29,28 @@ const ALLOWED_TYPES: Record<string, { extension: string; kind: 'image' | 'docume
   'image/png': { extension: '.png', kind: 'image' },
   'image/gif': { extension: '.gif', kind: 'image' },
   'image/webp': { extension: '.webp', kind: 'image' },
-  'image/heic': { extension: '.heic', kind: 'image' },
-  'image/heif': { extension: '.heif', kind: 'image' },
   'application/pdf': { extension: '.pdf', kind: 'document' },
+}
+
+/**
+ * Types refused with an explanation rather than a bare "unsupported".
+ *
+ * HEIC is the case that matters: an iPhone shooting in its default format
+ * produces a file no browser renders, and neither `next/image` nor the `sharp`
+ * build on most hosts can decode it — so committing one yields a broken image
+ * on the site. It also arrives unsanitised, since stripping metadata from an
+ * ISO base media container is a different problem from stripping a JPEG
+ * segment, meaning its GPS coordinates would survive into the repo.
+ *
+ * Refusing it with a usable message beats both. Two clients already convert on
+ * send (Gmail web and macOS Mail both did in testing), so the sender usually
+ * never sees this — and when they do, the fix is one setting on their phone.
+ */
+const REFUSED_TYPES: Record<string, string> = {
+  'image/heic':
+    'HEIC images are not supported — no browser renders them. On iPhone, Settings > Camera > Formats > Most Compatible makes the camera shoot JPEG instead.',
+  'image/heif':
+    'HEIF images are not supported — no browser renders them. On iPhone, Settings > Camera > Formats > Most Compatible makes the camera shoot JPEG instead.',
 }
 
 /**
@@ -141,7 +160,17 @@ export function planAttachments(
   let total = 0
 
   for (const attachment of attachments) {
-    const type = ALLOWED_TYPES[attachment.mimeType.toLowerCase().split(';')[0]!.trim()]
+    const mimeType = attachment.mimeType.toLowerCase().split(';')[0]!.trim()
+
+    // Refused-with-a-reason before the general allowlist, so the sender is told
+    // what to do rather than just that it did not work.
+    const refusal = REFUSED_TYPES[mimeType]
+    if (refusal) {
+      rejected.push({ filename: attachment.filename, reason: refusal })
+      continue
+    }
+
+    const type = ALLOWED_TYPES[mimeType]
     if (!type) {
       rejected.push({
         filename: attachment.filename,

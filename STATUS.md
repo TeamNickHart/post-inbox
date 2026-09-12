@@ -90,6 +90,23 @@ turned away, and what the sender should see. The exact sender-facing text is
 asserted against what those docs promise, so a message cannot be reworded
 without the documentation failing the build.
 
+## Image resizing and format conversion: already handled
+
+Worth writing down, because it was nearly built twice. The Tailwind starter
+already pipes every markdown image through `next/image`: `remarkImgToJsx`
+rewrites `![](...)` into the `Image` component, which wraps `NextImage`, and
+`next.config.js` only disables optimization when `UNOPTIMIZED` is set. So on
+Vercel, resizing and modern-format delivery happen for free, from whatever
+source file the post points at.
+
+That means **no conversion step, no originals directory, no manifest, no
+gitignoring `public/`, and no CI image job.** An earlier plan had all of those,
+plus a bot pushing converted files back to the pull request branch — which would
+also have re-triggered the notification workflow and sent two emails per post.
+All of it was solving a problem the template had already solved.
+
+The only format it cannot handle is HEIC, which is refused at upload instead.
+
 ## Known gaps
 
 - **Raw HTML in a post body does not render** — a deliberate consequence of
@@ -218,26 +235,14 @@ per-installation.
     it safely.
   - **PNG and WebP** have only their known metadata chunks removed. Neither has
     been checked against a real camera file the way JPEG has.
-  - **HEIC/HEIF are not sanitised at all** — an ISO base media container where
-    metadata is structural rather than a removable segment, so `stripsCleanly`
-    reports false and the bytes pass through untouched, GPS included.
-
-    How exposed this actually leaves us depends on the sending client, which is
-    narrower than first assumed. **Gmail's web composer converts HEIC to JPEG on
-    send**: a real message composed with a HEIC attachment arrived as two
-    `image/jpeg` parts, the converted one renamed to a lowercase `.jpeg` at full
-    5712x4284 sensor resolution. So that path never reaches the HEIC branch at
-    all.
-
-    Worth knowing, though: **the conversion is a repack, not a sanitisation.**
-    The converted JPEG still carried GPS, the device model, 25 stacked APP1
-    segments, an MPF index and `urn:iso:std` blocks — all of which our own
-    stripper then removed. Gmail changing the container is not a privacy
-    safeguard.
-
-    Untested: clients that attach HEIC as-is. iOS Mail is the one to check.
-    Closing the hole properly means either a real ISO-BMFF parser or refusing
-    HEIC until the build step converts it.
+  - **HEIC/HEIF are refused**, not sanitised. No browser renders them, and
+    neither `next/image` nor the `sharp` build on most hosts can decode one — so
+    committing one yields a broken image. It would also arrive unsanitised,
+    since stripping metadata from an ISO base media container is a different
+    problem from stripping a JPEG segment, which would put its GPS coordinates
+    in the repo. The bounce names the iPhone setting that fixes it. Two clients
+    already convert on send (Gmail web and macOS Mail both did in testing), so
+    a sender rarely sees this.
 
   Also unverified: that a **portrait** photo's `Orientation = 6` or `8` survives.
   The only real camera file tested was upright, and the orientation tests use

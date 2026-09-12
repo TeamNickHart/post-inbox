@@ -17,11 +17,22 @@ const file = (overrides: Partial<InboundAttachment> = {}): InboundAttachment => 
 })
 
 describe('planAttachments — what is allowed', () => {
-  it('accepts the image types a phone or laptop actually sends', () => {
-    const types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif']
-    for (const mimeType of types) {
+  it('accepts the image types a browser can actually render', () => {
+    for (const mimeType of ['image/jpeg', 'image/png', 'image/gif', 'image/webp']) {
       const plan = planAttachments([file({ mimeType })], 'a-post', paths)
       expect(plan.accepted, mimeType).toHaveLength(1)
+    }
+  })
+
+  it('refuses HEIC with a message saying what to do about it', () => {
+    // No browser renders HEIC, and neither next/image nor sharp on most hosts
+    // can decode it — so committing one yields a broken image. It also arrives
+    // unsanitised, since an ISO base media container is not a JPEG segment,
+    // which would put its GPS coordinates in the repo.
+    for (const mimeType of ['image/heic', 'image/heif']) {
+      const plan = planAttachments([file({ mimeType })], 'a-post', paths)
+      expect(plan.accepted, mimeType).toHaveLength(0)
+      expect(plan.rejected[0]!.reason).toMatch(/Most Compatible/)
     }
   })
 
@@ -331,10 +342,12 @@ describe('planAttachments — metadata is stripped on the way in', () => {
     expect(accepted[0]!.bytes).not.toEqual(withGps)
   })
 
-  it('leaves a format it cannot clean byte-identical', () => {
-    const bytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
+  it('leaves bytes alone when there is no metadata to strip', () => {
+    // A GIF carries no EXIF, so it should pass through untouched rather than
+    // being rewritten for no reason.
+    const bytes = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 2])
     const accepted = planAttachments(
-      [file({ filename: 'photo.heic', mimeType: 'image/heic', bytes })],
+      [file({ filename: 'anim.gif', mimeType: 'image/gif', bytes })],
       'my-post',
       paths,
     ).accepted
