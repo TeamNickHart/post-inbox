@@ -23,9 +23,47 @@ Last updated 2026-09-10. Worker version `77cd627b`, 180 tests passing.
 | Per-site GitHub and subject tokens | Resolved per site, falling back to the global value |
 | Bounce messages | Generic for auth failures, specific once the sender is authenticated |
 | Per-sender author mapping | Resolved on both paths, validated, `pnpm check:authors` |
+| Author notification email | Working on one site — Resend, via a GitHub Action, with a working deep link |
 
 Three sites configured, each with its own inbound address, sender allowlist and
 API token. One GitHub token covers all three, scoped to the org.
+
+## Author notifications
+
+When a `post-inbox/*` branch gets a successful **preview** deployment, the post's
+author is emailed a link straight to their post. Live on `jennyweis` only; the
+other two sites are deliberately not set up, since Vercel already notifies their
+owner.
+
+Sent by a GitHub Action in the blog repo rather than by the Worker, and the
+reason is sequencing: post-inbox opens the pull request *before* Vercel has built
+anything, so a notification sent at PR time could only link the pull request. The
+Action runs on `deployment_status`, by which point the preview URL exists.
+
+| Piece | Where |
+|---|---|
+| `.github/workflows/notify-author.yml` | blog repo (copy of `workflows/` here) |
+| `RESEND_API_KEY` | blog repo secret, on `jennyweis-blog` only |
+| `AUTHOR_EMAIL_MAP` | blog repo secret, derived from `sites.jsonc` |
+| `NOTIFY_FROM` | blog repo *variable*, `no-reply@<site domain>` |
+
+**No address is ever committed or logged.** The post's frontmatter carries only
+the author *name*; the address is looked up from the secret at send time and
+masked in output, because an Actions log outlives the run and is readable by
+anyone with repo access. This is also why the sender address was removed from the
+pull request body.
+
+A send failure never fails the build — the post is committed and the preview
+built by the time it runs, so a missing notification is a courtesy not
+delivered, not a reason to turn a check red.
+
+**Resend and Cloudflare coexist, and neither replaces the other.** Cloudflare
+Email Routing keeps inbound on the apex `MX`; Resend's three records all sit on
+subdomains (`send` for `MX` and SPF, `resend._domainkey` for DKIM), so no apex
+record is touched and the one-SPF-per-hostname rule never bites. Do **not** enable
+Resend's Inbound feature — it would receive all mail for the domain and fight
+Email Routing directly. Resend's free tier allows three domains; Pro at $20/mo
+allows ten and removes the 100/day cap.
 
 ## Things learned the hard way
 
@@ -57,6 +95,15 @@ time.
   nothing — every message rejected, silently.
 - **The PAT expires.** When posting starts failing with a 502, check that
   first.
+- **Vercel sets `deployment.ref` to a commit SHA, not a branch name.** A
+  workflow filtering `startsWith(deployment.ref, 'post-inbox/')` skips on every
+  event — silently, with nothing failing and the logs reading "skipped". Resolve
+  the branch from `deployment.sha` with `git branch -r --contains`, which needs
+  `fetch-depth: 0`. And exclude `environment == 'Production'`, or a merge sends a
+  second email.
+- **`pnpm configure:notify` writes to every site in `sites.jsonc`.** There is no
+  `--site` flag yet, so setting up one site pushes the Resend key to all three.
+  Delete the ones you do not want: `gh secret delete RESEND_API_KEY --repo ...`.
 
 ## Confirmed by building it, not assumed
 
