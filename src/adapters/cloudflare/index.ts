@@ -149,9 +149,15 @@ export default {
       return json({ error: 'Unauthorized' }, 401)
     }
 
+    // The HTTPS caller may name an author; the site's map resolves it the same
+    // way it does for an email sender. Unlike email, the address here is not
+    // authenticated by DKIM — the bearer token is what authorises the request,
+    // so `author` is a claim about attribution rather than an identity.
+    const authorFile = authorFileForSender(target.site, parsed.request.author)
+
     try {
       const result = await createDraftPost(
-        parsed.request,
+        { ...parsed.request, ...(authorFile ? { authorFile } : {}) },
         target.site,
         githubClient(target.secrets.githubToken),
       )

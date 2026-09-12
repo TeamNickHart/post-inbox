@@ -93,6 +93,26 @@ describe('createDraftPost', () => {
     expect(pull.title).toBe('Draft: Hello From Email')
   })
 
+  it('never names an email address in the pull request body', async () => {
+    // The body is permanent, readable by every collaborator, and quoted into
+    // notification emails and Actions logs. `request.author` is the sender's
+    // real address, so it must not appear there even on a private repo.
+    const { client, calls } = fakeGitHub()
+    await createDraftPost(request, site, client)
+
+    const pull = calls.find((call) => call.path.endsWith('/pulls'))!.body as Record<string, string>
+    expect(pull.body).not.toContain(request.author)
+    expect(pull.body).not.toMatch(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)
+  })
+
+  it('names the author file when one was resolved, since that is not private', async () => {
+    const { client, calls } = fakeGitHub()
+    await createDraftPost({ ...request, authorFile: 'nick' }, site, client)
+
+    const pull = calls.find((call) => call.path.endsWith('/pulls'))!.body as Record<string, string>
+    expect(pull.body).toContain('**Author:** nick')
+  })
+
   it('picks a fresh branch name when one is already taken', async () => {
     const { client } = fakeGitHub({
       existingBranches: ['main', 'post-inbox/2026-09-09-hello-from-email'],
