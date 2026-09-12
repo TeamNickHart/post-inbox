@@ -83,11 +83,18 @@ jobs:
           author="$(sed -n "s/^authors: *\[['\"]\([^'\"]*\)['\"].*/\1/p" "$post" | head -1)"
           title="$(sed -n "s/^title: *['\"]\(.*\)['\"] *$/\1/p" "$post" | head -1)"
 
+          # The route is /blog/<slug>, and the slug is the filename. Linking
+          # the post directly rather than the preview's homepage matters: a new
+          # post is not necessarily on the front page, so a homepage link leaves
+          # the author hunting for their own writing.
+          slug="$(basename "$post" .mdx)"
+
           echo "found=true" >> "$GITHUB_OUTPUT"
           echo "path=$post" >> "$GITHUB_OUTPUT"
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
           echo "author=$author" >> "$GITHUB_OUTPUT"
           echo "title=$title" >> "$GITHUB_OUTPUT"
-          echo "Post: $post (author: ${author:-none})"
+          echo "Post: $post (slug: $slug, author: ${author:-none})"
 
       - name: Send the notification
         if: steps.post.outputs.found == 'true'
@@ -98,6 +105,7 @@ jobs:
           AUTHOR: ${{ steps.post.outputs.author }}
           TITLE: ${{ steps.post.outputs.title }}
           POST_PATH: ${{ steps.post.outputs.path }}
+          POST_SLUG: ${{ steps.post.outputs.slug }}
           PREVIEW_URL: ${{ github.event.deployment_status.environment_url }}
           REF: ${{ github.event.deployment.sha }}
         run: node .github/scripts/notify-author.mjs

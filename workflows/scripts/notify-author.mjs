@@ -20,6 +20,7 @@ const {
   AUTHOR,
   TITLE,
   POST_PATH,
+  POST_SLUG,
   PREVIEW_URL,
   REF,
   GITHUB_REPOSITORY,
@@ -51,12 +52,19 @@ const recipient = map[AUTHOR]
 if (!recipient) fail(`no address mapped for author "${AUTHOR}"`)
 
 const prUrl = `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/pulls`
+
+// Link the post itself, not the preview's homepage. A new post is not
+// necessarily on the front page, so a bare preview link leaves the author
+// looking for their own writing. Falls back to the homepage if the slug is
+// somehow missing, since a working link beats no link.
+const postUrl =
+  POST_SLUG && PREVIEW_URL ? `${PREVIEW_URL.replace(/\/+$/, '')}/blog/${POST_SLUG}` : PREVIEW_URL
 const lines = [
   `Your draft post is ready to look at.`,
   ``,
   `    ${TITLE}`,
   ``,
-  `Preview:  ${PREVIEW_URL}`,
+  `Read it:  ${postUrl}`,
   `Pull request: ${prUrl}`,
   ``,
   `Nothing is published yet. Read it through on the preview, and merge the pull`,
