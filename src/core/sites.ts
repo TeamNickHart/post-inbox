@@ -33,18 +33,24 @@ export interface SiteDefinition extends SiteConfig {
    */
   inboundAddresses: string[]
   /**
-   * Per-sender author mapping: an envelope address to the basename of a file
-   * in the site's `data/authors` directory, without the extension.
+   * Who may post to this site, and as whom: an envelope address mapped to the
+   * basename of a file in the site's `data/authors` directory.
    *
-   * An address absent from this map posts under the site's own default author,
-   * because no `authors` field is emitted at all.
+   * **This is the single source of truth for the sender allowlist.** An address
+   * not listed here cannot post. The allowlist used to be a separate
+   * `<SITE>_ALLOWED_SENDERS` secret holding the same addresses, which meant the
+   * same information in two places — and the two drifted, producing an
+   * allowlist that matched nothing while the author map looked correct.
    *
-   * **The name must match a real file.** Frontmatter naming an author that
+   * **Each name must match a real file.** Frontmatter naming an author that
    * does not exist breaks the site build, so a typo here is a broken deploy
-   * rather than a cosmetic mistake. `validateSites` checks the shape; only the
-   * target repo can confirm the file, so keep the two in step by hand.
+   * rather than a cosmetic mistake. `validateSites` checks the shape and
+   * `pnpm check:authors` checks the files against each repo.
+   *
+   * Use `default` as the name for a sender who should post under the site's own
+   * default author rather than a personal one.
    */
-  authorsBySender?: Record<string, string>
+  authorsBySender: Record<string, string>
 }
 
 /** The shape of `sites.jsonc`. */
@@ -177,10 +183,17 @@ function validateAssets(site: SiteDefinition): void {
  */
 function validateAuthorMap(site: SiteDefinition): void {
   const map = site.authorsBySender
-  if (map === undefined) return
 
   if (typeof map !== 'object' || map === null || Array.isArray(map)) {
     throw new ConfigError(`site ${site.key} has an authorsBySender that is not an object`)
+  }
+  // It is the allowlist, so an empty one means nobody can post. That is a
+  // misconfiguration worth catching at build time rather than on the first
+  // rejected message.
+  if (Object.keys(map).length === 0) {
+    throw new ConfigError(
+      `site ${site.key} has an empty authorsBySender — it is the sender allowlist, so at least one address is required`,
+    )
   }
 
   const seen = new Set<string>()
@@ -250,30 +263,10 @@ export function secretsForSite(
 ): SiteSecrets {
   const prefix = secretPrefix(site.key)
 
-  // Split on commas or whitespace. Tolerating both matters because the value
-  // is hand-entered: a space-separated list stored as one string would contain
-  // an `@`, look superficially valid, and match no sender at all — a silent
-  // failure where every message is rejected.
-  const raw = env[`${prefix}_ALLOWED_SENDERS`]
-  const allowedSenders = (raw ?? '')
-    .split(/[,\s]+/)
-    .map((address) => address.trim().toLowerCase())
-    .filter(Boolean)
-
-  if (allowedSenders.length === 0) {
-    throw new ConfigError(
-      `site ${site.key} has no allowed senders: set ${prefix}_ALLOWED_SENDERS`,
-    )
-  }
-
-  // An entry with no `@` can never match an envelope sender, so it is a
-  // misconfiguration worth naming rather than a rule that silently never fires.
-  const malformed = allowedSenders.filter((address) => !address.includes('@'))
-  if (malformed.length > 0) {
-    throw new ConfigError(
-      `site ${site.key} has malformed entries in ${prefix}_ALLOWED_SENDERS: ${malformed.join(', ')}`,
-    )
-  }
+  // Derived from the author map rather than read from a secret: the two held
+  // the same addresses, and drifted. `validateSites` has already checked that
+  // every key is address-shaped and that the map is non-empty.
+  const allowedSenders = allowedSendersFor(site)
 
   const apiToken = env[`${prefix}_API_TOKEN`]?.trim()
 
@@ -298,6 +291,30 @@ export function secretsForSite(
     subjectToken,
     ...(apiToken ? { apiToken } : {}),
   }
+}
+
+/**
+ * The addresses permitted to post to a site: the keys of its author map.
+ *
+ * Lowercased, because an envelope sender is compared case-insensitively.
+ */
+export function allowedSendersFor(site: SiteDefinition): string[] {
+  return Object.keys(site.authorsBySender).map((address) => address.trim().toLowerCase())
+}
+
+/**
+ * Author name to the one address that should be notified about their posts.
+ *
+ * First entry wins where a name has several addresses: the others may still
+ * post, but only one gets told about it. Deliberately not every address — one
+ * notification per sending address means several copies of the same email.
+ */
+export function notifyAddressByAuthor(site: SiteDefinition): Record<string, string> {
+  const byAuthor: Record<string, string> = {}
+  for (const [address, author] of Object.entries(site.authorsBySender)) {
+    byAuthor[author] ??= address.trim().toLowerCase()
+  }
+  return byAuthor
 }
 
 /**

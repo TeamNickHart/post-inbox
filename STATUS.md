@@ -23,9 +23,47 @@ Last updated 2026-09-10. Worker version `77cd627b`, 180 tests passing.
 | Per-site GitHub and subject tokens | Resolved per site, falling back to the global value |
 | Bounce messages | Generic for auth failures, specific once the sender is authenticated |
 | Per-sender author mapping | Resolved on both paths, validated, `pnpm check:authors` |
+| Author notification email | Working on one site — Resend, via a GitHub Action, with a working deep link |
 
 Three sites configured, each with its own inbound address, sender allowlist and
 API token. One GitHub token covers all three, scoped to the org.
+
+## Author notifications
+
+When a `post-inbox/*` branch gets a successful **preview** deployment, the post's
+author is emailed a link straight to their post. Live on `jennyweis` only; the
+other two sites are deliberately not set up, since Vercel already notifies their
+owner.
+
+Sent by a GitHub Action in the blog repo rather than by the Worker, and the
+reason is sequencing: post-inbox opens the pull request *before* Vercel has built
+anything, so a notification sent at PR time could only link the pull request. The
+Action runs on `deployment_status`, by which point the preview URL exists.
+
+| Piece | Where |
+|---|---|
+| `.github/workflows/notify-author.yml` | blog repo (copy of `workflows/` here) |
+| `RESEND_API_KEY` | blog repo secret, on `jennyweis-blog` only |
+| `AUTHOR_EMAIL_MAP` | blog repo secret, derived from `sites.jsonc` |
+| `NOTIFY_FROM` | blog repo *variable*, `no-reply@<site domain>` |
+
+**No address is ever committed or logged.** The post's frontmatter carries only
+the author *name*; the address is looked up from the secret at send time and
+masked in output, because an Actions log outlives the run and is readable by
+anyone with repo access. This is also why the sender address was removed from the
+pull request body.
+
+A send failure never fails the build — the post is committed and the preview
+built by the time it runs, so a missing notification is a courtesy not
+delivered, not a reason to turn a check red.
+
+**Resend and Cloudflare coexist, and neither replaces the other.** Cloudflare
+Email Routing keeps inbound on the apex `MX`; Resend's three records all sit on
+subdomains (`send` for `MX` and SPF, `resend._domainkey` for DKIM), so no apex
+record is touched and the one-SPF-per-hostname rule never bites. Do **not** enable
+Resend's Inbound feature — it would receive all mail for the domain and fight
+Email Routing directly. Resend's free tier allows three domains; Pro at $20/mo
+allows ten and removes the 100/day cap.
 
 ## Things learned the hard way
 
@@ -57,6 +95,15 @@ time.
   nothing — every message rejected, silently.
 - **The PAT expires.** When posting starts failing with a 502, check that
   first.
+- **Vercel sets `deployment.ref` to a commit SHA, not a branch name.** A
+  workflow filtering `startsWith(deployment.ref, 'post-inbox/')` skips on every
+  event — silently, with nothing failing and the logs reading "skipped". Resolve
+  the branch from `deployment.sha` with `git branch -r --contains`, which needs
+  `fetch-depth: 0`. And exclude `environment == 'Production'`, or a merge sends a
+  second email.
+- **`pnpm configure:notify` writes to every site in `sites.jsonc`.** There is no
+  `--site` flag yet, so setting up one site pushes the Resend key to all three.
+  Delete the ones you do not want: `gh secret delete RESEND_API_KEY --repo ...`.
 
 ## Confirmed by building it, not assumed
 
@@ -182,6 +229,48 @@ when the GitHub App lands, since App installation tokens are naturally
 per-installation.
 
 ## Backlog
+
+- **Polish the initial setup: `pnpm setup` and `pnpm doctor`.** Setup has grown
+  by accretion and now spans two secret stores with two different tools, which
+  is obvious while building it and baffling six months later:
+
+  | Secret | Store | Tool | Set by |
+  |---|---|---|---|
+  | `GITHUB_TOKEN`, `EMAIL_SUBJECT_TOKEN` | Cloudflare | `wrangler secret put` | `pnpm configure` |
+  | `<SITE>_API_TOKEN`, per-site overrides | Cloudflare | `wrangler secret put` | `pnpm configure:site` |
+  | `RESEND_API_KEY`, `AUTHOR_EMAIL_MAP` | GitHub repo | `gh secret set` | `pnpm configure:notify` |
+
+  **Name by intent, not by destination.** `config:github` / `config:cloudflare`
+  was considered and rejected: it makes the store obvious, but scatters one
+  logical task across two commands — adding a site would mean running both and
+  remembering which secrets live where, which is knowledge the tool should hold.
+  It also bakes in a destination that is likely to move: if `RESEND_API_KEY`
+  goes org-level, or the notification moves back into the Worker,
+  `config:github` becomes a lie. Each command should instead *say* which store
+  it is writing to as it runs.
+
+  ```
+  pnpm setup              # the front door: walks everything, in order
+  pnpm setup:site <key>   # one site, whichever stores it needs
+  pnpm setup:notify       # notifications
+  pnpm doctor             # what is set, missing, or drifted
+  ```
+
+  `pnpm setup` matters most: there is no single entry point today, so a fork has
+  to read the README to discover three commands and the order to run them in.
+
+  **`pnpm doctor` is the piece most worth building.** Secrets cannot be read
+  back, so today the only way to find a gap is to send mail and watch it fail —
+  which is exactly how two real problems were found the slow way: an
+  `API_TOKEN` mismatch that produced a bare 401, and a `WEISHART_ALLOWED_SENDERS`
+  value that was one malformed string matching no sender at all. Doctor should
+  report, per site, which Cloudflare secrets exist, which GitHub secrets exist,
+  what `sites.jsonc` expects, and where those disagree — without printing a
+  single secret value.
+
+  Also: `<SITE>_ALLOWED_SENDERS` secrets are now unused, since the allowlist is
+  derived from `authorsBySender`. They are still set on the Worker and should be
+  deleted — `pnpm doctor` would flag exactly this.
 
 - **Reply on success, with a link to the preview.** Confirming that a post
   landed, and where to look at it, closes the loop — right now success is
@@ -311,6 +400,39 @@ per-installation.
 - **HTML email → markdown**, via `turndown`. Currently rejected. The real
   message carries an HTML part alongside the plaintext one, so the input is
   already there — it is only ignored.
+
+- **Email bare media into the asset library.** Needs discussion before
+  building; the easy path is small and the interesting parts are not.
+
+  The shape: an email carrying attachments and no real body becomes a commit
+  that adds files to the site's assets directory, with no post. Most of the
+  machinery exists — the MIME allowlist, size caps, slug-based naming, metadata
+  stripping and binary commits are all already there.
+
+  What has to be settled first:
+
+  - **What counts as "no body"?** A signature-only message and a subject with no
+    body are both *already* rejections with their own bounce text, so the trigger
+    has to be unambiguous or it collides with them. An explicit `Assets:` header
+    or a reserved subject prefix is safer than inferring from an empty body.
+  - **Where do the files go, and under what names?** Post attachments are named
+    from the post slug, which does not exist here. Sender-supplied names are
+    attacker-controlled and collide in a flat directory — the reason slug-based
+    naming exists at all.
+  - **Auto-rebasing open PRs is the genuinely complex part.** If assets land on
+    the main branch while several post PRs are open, those PRs are behind.
+    Rebasing means force-pushing branches that may be under review, and each
+    rebase triggers a fresh preview build — so one asset email could kick off
+    several deploys at once. A post that references an image added afterwards
+    still will not see it until merged, so the rebase does not even buy what it
+    looks like it buys.
+  - **It overlaps with reply-to-append**, which solves "add media to a post" more
+    precisely: a reply targets one pull request instead of mutating every open
+    one. If reply-to-append lands first, the remaining use for this is seeding
+    the asset library independently of any post — worth having, but a smaller
+    feature than it first appears.
+
+- **HTML email → markdown**, via `turndown`. Currently rejected.
 - **Attachments** — images and PDFs committed to the repo, MIME allowlist, size
   cap. HEIC conversion and resizing are a separate problem, likely a GitHub
   Action on the PR rather than in the Worker, since `sharp` needs native

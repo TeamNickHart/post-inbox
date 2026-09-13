@@ -18,6 +18,8 @@ const site = (overrides: Partial<SiteDefinition> = {}): SiteDefinition => ({
   baseBranch: 'main',
   contentPath: 'data/blog',
   extension: '.mdx',
+  // Doubles as the sender allowlist, so a site cannot be built without one.
+  authorsBySender: { 'a@example.com': 'default' },
   ...overrides,
 })
 
@@ -85,7 +87,6 @@ describe('secrets', () => {
   /** The minimum environment for a site to resolve at all. */
   const withGlobals = (extra: Record<string, string> = {}) => ({
     GITHUB_TOKEN: 'global-gh',
-    MYSITE_ALLOWED_SENDERS: 'a@example.com',
     ...extra,
   })
 
@@ -94,46 +95,24 @@ describe('secrets', () => {
     expect(secretPrefix('my-site')).toBe('MY_SITE')
   })
 
-  it('reads the allowlist and token for a site', () => {
+  it('derives the allowlist from the author map rather than a secret', () => {
+    // One source of truth. These held the same addresses in two places and
+    // drifted, producing an allowlist that matched nothing while the author map
+    // looked correct.
     const secrets = secretsForSite(
-      site(),
-      withGlobals({ MYSITE_ALLOWED_SENDERS: 'A@example.com, b@example.com', MYSITE_API_TOKEN: 'tok' }),
+      site({ authorsBySender: { 'A@example.com': 'nick', 'b@example.com': 'jenny' } }),
+      withGlobals({ MYSITE_API_TOKEN: 'tok' }),
     )
     expect(secrets.allowedSenders).toEqual(['a@example.com', 'b@example.com'])
     expect(secrets.apiToken).toBe('tok')
   })
 
-  it('accepts a space-separated allowlist', () => {
-    // The configure script offers both separators, and a hand-set secret may
-    // use either. Splitting on commas alone stored the whole string as one
-    // address that contained an `@` — so it passed validation and then matched
-    // no sender at all.
+  it('ignores a stale ALLOWED_SENDERS secret if one is still set', () => {
     const secrets = secretsForSite(
-      site(),
-      withGlobals({ MYSITE_ALLOWED_SENDERS: 'a@example.com b@example.com' }),
+      site({ authorsBySender: { 'a@example.com': 'nick' } }),
+      withGlobals({ MYSITE_ALLOWED_SENDERS: 'someone-else@example.com' }),
     )
-    expect(secrets.allowedSenders).toEqual(['a@example.com', 'b@example.com'])
-  })
-
-  it('accepts a mix of commas and spaces', () => {
-    const secrets = secretsForSite(
-      site(),
-      withGlobals({ MYSITE_ALLOWED_SENDERS: 'a@example.com, b@example.com  c@example.com' }),
-    )
-    expect(secrets.allowedSenders).toHaveLength(3)
-  })
-
-  it('rejects an entry that could never match a sender', () => {
-    expect(() =>
-      secretsForSite(site(), withGlobals({ MYSITE_ALLOWED_SENDERS: 'a@example.com, notanaddress' })),
-    ).toThrow(/malformed/)
-  })
-
-  it('treats a missing allowlist as a misconfiguration, not allow-everyone', () => {
-    expect(() => secretsForSite(site(), { GITHUB_TOKEN: 'g' })).toThrow(/MYSITE_ALLOWED_SENDERS/)
-    expect(() =>
-      secretsForSite(site(), { GITHUB_TOKEN: 'g', MYSITE_ALLOWED_SENDERS: ' , ' }),
-    ).toThrow(ConfigError)
+    expect(secrets.allowedSenders).toEqual(['a@example.com'])
   })
 
   it('allows a site with no api token, for email-only posting', () => {
@@ -141,10 +120,12 @@ describe('secrets', () => {
     expect(secrets.apiToken).toBeUndefined()
   })
 
-  it('does not read another site\'s secrets', () => {
-    expect(() =>
-      secretsForSite(site({ key: 'other' }), withGlobals()),
-    ).toThrow(/OTHER_ALLOWED_SENDERS/)
+  it('reads only its own prefixed secrets', () => {
+    // The allowlist is derived from the author map now, so a missing
+    // ALLOWED_SENDERS secret is no longer an error. What must stay scoped is
+    // the API token: one site's must never be picked up by another.
+    const secrets = secretsForSite(site({ key: 'other' }), withGlobals({ MYSITE_API_TOKEN: 'not-mine' }))
+    expect(secrets.apiToken).toBeUndefined()
   })
 })
 
