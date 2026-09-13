@@ -1,0 +1,79 @@
+# Typecheck, test, and check for committed secrets on every pull request.
+#
+# Not a shared reusable workflow in `TeamNickHart/.github`, unlike the blog
+# repos' checks: this is the only TypeScript repo in the org, so a shared
+# version would have exactly one caller and the indirection would cost more
+# than it saved. The blog checks are shared because three sites run them.
+#
+# Deliberately unfiltered — no `paths:`. `ci / ci` is a required check, and a
+# required check that does not run never reports, leaving the pull request
+# blocked with nothing to click and no way to merge. That happened to the blog
+# repos' MDX check; see STATUS.md.
+name: CI
+
+on:
+  pull_request:
+  # Also on pushes to main, so a merge that breaks the build is visible rather
+  # than waiting for the next pull request to reveal it.
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      # Read-only: this reports through its own status and the job summary, and
+      # never needs to write to the pull request.
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # `sites.jsonc` is gitignored, because it names real addresses and repos
+      # and this repo is public — so CI stands the example config up in its
+      # place. That also means the example is exercised on every run: if it ever
+      # stops validating, CI fails here, which is how the README's own setup
+      # step gets tested rather than assumed.
+      - name: Stand up the example site config
+        run: |
+          cp sites.example.jsonc sites.jsonc
+          pnpm build:sites
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # `--tracked` rather than the default staged mode: nothing is staged on a
+      # runner, so the default would inspect zero files and pass vacuously.
+      - name: Check for committed secrets
+        run: pnpm exec node scripts/check-no-secrets.mjs --tracked
+
+      - name: Explain a failure
+        if: failure()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'NOTE'
+          ## CI failed
+
+          Reproduce locally with the same steps CI runs:
+
+          ```
+          cp sites.example.jsonc sites.jsonc   # only if you have no sites.jsonc
+          pnpm build:sites
+          pnpm verify
+          ```
+
+          `pnpm verify` is typecheck plus tests plus the secrets check. If it
+          passes locally but failed here, the difference is usually a file that
+          is gitignored locally and absent on the runner.
+          NOTE

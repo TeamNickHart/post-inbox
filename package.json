@@ -8,6 +8,7 @@
   "engines": {
     "node": ">=24"
   },
+  "packageManager": "pnpm@10.19.0",
   "scripts": {
     "dev": "pnpm build:sites && wrangler dev",
     "deploy": "pnpm build:sites && wrangler deploy",
