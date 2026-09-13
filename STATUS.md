@@ -329,6 +329,15 @@ per-installation.
 
 ## Backlog
 
+- **Two posts render with two H1s.** `MD025` is the one markdown rule left
+  enabled, and it finds real problems in `nickhart-blog`:
+  `5-ways-ai-helped-me-handle-my-mothers-passing.mdx:10` and
+  `markdown-writing-workflow.mdx:10`. Each opens with a body `# Heading` while
+  the layout already renders the frontmatter title as the page's H1, so the page
+  ships two — which hurts screen readers and SEO. The fix is demoting each to
+  `##`. Left for the author rather than done automatically, since it edits
+  published prose. The advisory prose check will keep reporting them until then.
+
 - **Polish the initial setup: `pnpm setup` and `pnpm doctor`.** Setup has grown
   by accretion and now spans two secret stores with two different tools, which
   is obvious while building it and baffling six months later:
