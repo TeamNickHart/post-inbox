@@ -46,20 +46,24 @@
         // no browser renders it, so without this a photo emailed from iOS is
         // refused rather than committed. Set false to keep that refusal.
         // "convertImages": false
-      }
+      },
 
-      // Optional, for a site with several authors: map an envelope address to
-      // a file in the site's `data/authors` directory. Anyone unlisted posts
-      // under the site's own default author.
+      // Required. This is the sender allowlist as well as the author map: an
+      // address not listed here cannot post at all, which is why a site with an
+      // empty map is rejected at build time rather than on the first email.
+      //
+      // Maps an envelope address to a file in the site's `data/authors`
+      // directory. An address whose author file is the site default can point
+      // at `default`.
       //
       // The value is a bare basename — no directory, no `.mdx`. It must match
       // a file that exists: frontmatter naming a missing author breaks the
       // site build. Run `pnpm check:authors` after editing this.
       //
-      // "authorsBySender": {
-      //   "someone@example.com": "someone",
-      //   "someone-else@example.com": "someone-else"
-      // }
+      "authorsBySender": {
+        "you@example.com": "default",
+        "someone-else@example.com": "someone-else"
+      }
     }
   ]
 }
