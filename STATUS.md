@@ -299,6 +299,26 @@ per-installation.
   build finishes — "preview ready: <url>" — but something has to notice that,
   which means CI or a Vercel webhook rather than the Worker.
 
+- **Encode the site in the notification sender address.** A prerequisite for
+  reply-to-append once one sending domain is shared across sites.
+
+  Resend's free tier allows three verified domains, which happens to match the
+  three blogs — but other projects want domains too, and Pro is $20/mo for ten.
+  So the intent is one shared sending domain once the workflow is solid, running
+  on two while it is built.
+
+  Sharing a sender breaks reply routing: a reply to a `jennyweis` post sent from
+  `no-reply@weishart.com` arrives at `weishart`'s inbound address and would
+  append to the wrong repository. Subaddressing fixes it —
+  `no-reply+jennyweis@weishart.com` — since the `+tag` survives a reply in most
+  clients and Cloudflare Email Routing can match on it. The append handler reads
+  the tag to pick the site rather than trusting the destination address.
+
+  Worth settling at the same time: whether the tag is the site key, which is
+  guessable, or an opaque per-site token. Guessable is probably fine, since an
+  append must still pass the sender allowlist and DKIM — but it deserves a
+  decision rather than a default.
+
 - **Reply to append: add to a post by replying to the confirmation.**
   Replying with the images or tags you forgot is a far better loop than opening
   a PR in a browser.
@@ -432,10 +452,5 @@ per-installation.
     the asset library independently of any post — worth having, but a smaller
     feature than it first appears.
 
-- **HTML email → markdown**, via `turndown`. Currently rejected.
-- **Attachments** — images and PDFs committed to the repo, MIME allowlist, size
-  cap. HEIC conversion and resizing are a separate problem, likely a GitHub
-  Action on the PR rather than in the Worker, since `sharp` needs native
-  binaries a Worker cannot run.
 - **The launch post**, written through the tool itself. See §9 of the design
   doc — this works now.
