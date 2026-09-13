@@ -4,17 +4,17 @@ import { stripImageMetadata } from './metadata.ts'
 /**
  * Email attachments becoming files in the site repo.
  *
- * Scope, deliberately: this commits attachments as they arrive. It does not
- * convert, resize, or re-encode anything. Image processing belongs in the
- * site's build — a GitHub Action on the pull request has a full Linux runner
- * with `sharp` and native tools, where a Worker has neither and cannot execute
- * native binaries at all. Keeping conversion out of here also means it applies
- * to every image in the repo however it arrived, including images added later
- * by a reply, without that path knowing anything about it.
+ * Scope, deliberately: this decides what may be committed and under what name.
+ * It does not resize or re-encode — the site's build already does that, since
+ * the Tailwind starter pipes every markdown image through `next/image`, so
+ * resizing and modern-format delivery happen for free from whatever source file
+ * the post points at.
  *
- * A HEIC from an iPhone therefore lands as a HEIC. That is a real gap until the
- * build step exists, and it is visible rather than silent: the PR shows a file
- * the site cannot render.
+ * Format *conversion* is the one exception, and it happens before this function
+ * sees anything: `core/imageConversion.ts` turns a HEIC into a JPEG, because
+ * `next/image` cannot decode HEIC either and a committed HEIC would be a broken
+ * image rather than an unoptimised one. An attachment arriving here is already
+ * in a format a browser renders, or it is refused.
  */
 
 /**
@@ -35,16 +35,14 @@ const ALLOWED_TYPES: Record<string, { extension: string; kind: 'image' | 'docume
 /**
  * Types refused with an explanation rather than a bare "unsupported".
  *
- * HEIC is the case that matters: an iPhone shooting in its default format
- * produces a file no browser renders, and neither `next/image` nor the `sharp`
- * build on most hosts can decode it — so committing one yields a broken image
- * on the site. It also arrives unsanitised, since stripping metadata from an
- * ISO base media container is a different problem from stripping a JPEG
- * segment, meaning its GPS coordinates would survive into the repo.
+ * HEIC reaches here only when conversion was unavailable — the site has not
+ * enabled it, or no converter was configured. When conversion was attempted and
+ * failed, `convertAttachments` sets `refusalOverride` instead, because the
+ * camera setting named below is then not the problem.
  *
- * Refusing it with a usable message beats both. Two clients already convert on
- * send (Gmail web and macOS Mail both did in testing), so the sender usually
- * never sees this — and when they do, the fix is one setting on their phone.
+ * Worth keeping the advice even so: it is still the fix for a site running
+ * without a converter, and Gmail web and macOS Mail both convert on send
+ * anyway, so a sender rarely sees any of this.
  */
 const REFUSED_TYPES: Record<string, string> = {
   'image/heic':
@@ -83,6 +81,14 @@ export interface InboundAttachment {
    * Keying placement to the disposition would therefore detect nothing.
    */
   related?: boolean
+  /**
+   * Refusal reason to use instead of the one keyed to the MIME type.
+   *
+   * Set by `convertAttachments` when a conversion was attempted and failed, so
+   * the message explains that rather than telling the sender to change a camera
+   * setting that was not the problem. See `core/imageConversion.ts`.
+   */
+  refusalOverride?: string
 }
 
 /** An attachment accepted for committing. */
@@ -163,8 +169,10 @@ export function planAttachments(
     const mimeType = attachment.mimeType.toLowerCase().split(';')[0]!.trim()
 
     // Refused-with-a-reason before the general allowlist, so the sender is told
-    // what to do rather than just that it did not work.
-    const refusal = REFUSED_TYPES[mimeType]
+    // what to do rather than just that it did not work. An override set by
+    // `convertAttachments` wins: it knows a conversion was tried and failed,
+    // which the MIME type alone cannot express.
+    const refusal = attachment.refusalOverride ?? REFUSED_TYPES[mimeType]
     if (refusal) {
       rejected.push({ filename: attachment.filename, reason: refusal })
       continue

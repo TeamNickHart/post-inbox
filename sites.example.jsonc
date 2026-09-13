@@ -40,6 +40,12 @@
       "assets": {
         "directory": "public/static/images",
         "urlPrefix": "/static/images"
+
+        // Optional, default true: convert HEIC to JPEG on the way in, using
+        // the Cloudflare Images binding. An iPhone shoots HEIC by default and
+        // no browser renders it, so without this a photo emailed from iOS is
+        // refused rather than committed. Set false to keep that refusal.
+        // "convertImages": false
       }
 
       // Optional, for a site with several authors: map an envelope address to

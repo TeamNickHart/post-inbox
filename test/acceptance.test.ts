@@ -38,11 +38,11 @@ export function renderFixture(): string {
 }
 
 describe('the canonical acceptance test', () => {
-  it('turns the sample body into exactly the expected post', () => {
+  it('turns the sample body into exactly the expected post', async () => {
     expect(renderFixture()).toBe(readFileSync(`${dir}expected.mdx`, 'utf8'))
   })
 
-  it('produces frontmatter the site can parse', () => {
+  it('produces frontmatter the site can parse', async () => {
     const output = renderFixture()
     expect(output.startsWith('---\n')).toBe(true)
     expect(output).toContain("title: 'Markdown Acceptance Test'")
@@ -50,7 +50,7 @@ describe('the canonical acceptance test', () => {
     expect(output).toContain('draft: false')
   })
 
-  it('preserves every construct that MDX would otherwise mangle', () => {
+  it('preserves every construct that MDX would otherwise mangle', async () => {
     const output = renderFixture()
 
     // Math: braces inside TeX must survive unescaped, or KaTeX renders
@@ -72,14 +72,14 @@ describe('the canonical acceptance test', () => {
     expect(output).toMatch(/^\[\^1\]: The first footnote\.$/m)
   })
 
-  it('escapes prose that MDX would read as syntax', () => {
+  it('escapes prose that MDX would read as syntax', async () => {
     const output = renderFixture()
     expect(output).toContain('5 \\< 10')
     expect(output).toContain('Array\\<int>')
     expect(output).toContain('the \\{maybe\\} case')
   })
 
-  it('converts autolinks, which are valid markdown but invalid MDX', () => {
+  it('converts autolinks, which are valid markdown but invalid MDX', async () => {
     const output = renderFixture()
     expect(output).toContain('[https://jennyweis.com](https://jennyweis.com)')
     expect(output).toContain('[nick@example.com](mailto:nick@example.com)')
@@ -95,8 +95,8 @@ describe('the documented rejection cases', () => {
   // sender sees is asserted against what the docs promise.
   const htmlOnlyDoc = readFileSync(`${dir}rejections/html-only.md`, 'utf8')
 
-  it('quotes the real sender message for an html-only rejection', () => {
-    const result = emailToPost(
+  it('quotes the real sender message for an html-only rejection', async () => {
+    const result = await emailToPost(
       {
         envelopeFrom: 'a@example.com',
         subject: 'A Post',
@@ -116,7 +116,7 @@ describe('the documented rejection cases', () => {
     expect(collapse(htmlOnlyDoc)).toContain(collapse(result.senderMessage))
   })
 
-  it('lists every case the rejections README claims to cover', () => {
+  it('lists every case the rejections README claims to cover', async () => {
     const readme = readFileSync(`${dir}rejections/README.md`, 'utf8')
     for (const claim of ['html-only', 'Not allowlisted', 'Wrong subject token', 'No title']) {
       expect(readme).toContain(claim)

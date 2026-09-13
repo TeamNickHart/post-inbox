@@ -36,6 +36,15 @@ export interface DraftPostRequest {
    */
   rejectedAttachments?: { filename: string; reason: string }[]
   /**
+   * Attachments converted to a renderable format on the way in.
+   *
+   * Noted in the pull request as a success rather than a warning: a reviewer
+   * seeing a JPEG where the sender is certain they attached a HEIC should not
+   * have to guess, and if a conversion ever degrades an image this is the
+   * breadcrumb back to why.
+   */
+  convertedAttachments?: { filename: string; from: string }[]
+  /**
    * Value for the post's `draft` frontmatter field.
    *
    * Defaults to false. The pull request is already the gate that stops a
@@ -72,6 +81,16 @@ export interface SiteConfig {
   assets?: {
     directory: string
     urlPrefix: string
+    /**
+     * Convert formats a browser cannot render — chiefly HEIC from an iPhone —
+     * into JPEG on the way in. Defaults to **true**: a site that accepts
+     * attachments at all wants renderable ones, and leaving it off would mean a
+     * photo from an iPhone is refused rather than committed.
+     *
+     * Set false to keep the refusal behaviour, which is also what happens
+     * automatically when no converter is available to the adapter.
+     */
+    convertImages?: boolean
   }
 }
 

@@ -46,6 +46,27 @@ export interface Env {
 }
 
 /**
+ * Bindings, kept out of `Env` rather than declared on it.
+ *
+ * `Env`'s index signature exists so per-site secrets can be looked up by a
+ * computed name, and it must admit every member's type. Declaring a binding on
+ * `Env` therefore means widening that signature to
+ * `string | ImagesBinding | undefined`, which then makes `Env` unassignable to
+ * the `Record<string, string | undefined>` that `secretsForSite` takes — so the
+ * widening propagates outward until something gives. Intersecting instead keeps
+ * `Env` exactly as it was and confines the binding to the code that uses it.
+ */
+export type EnvWithBindings = Env & {
+  /**
+   * Cloudflare Images, for converting HEIC. Optional on purpose: absent means
+   * such an attachment is refused with advice, which is a supported state
+   * rather than a broken one, and making it optional is what proves that at
+   * compile time.
+   */
+  IMAGES?: ImagesBinding
+}
+
+/**
  * The configured sites, validated once at module load.
  *
  * `scripts/build-sites.mjs` validates before bundling; doing it again here

@@ -112,6 +112,28 @@ describe('createDraftPost', () => {
     expect(pull.body).toContain('HEIC is not supported')
   })
 
+  it('notes a conversion as a success rather than a warning', async () => {
+    // A reviewer seeing a JPEG where the sender is certain they attached a HEIC
+    // should not have to guess. It rides on the attachments line rather than
+    // becoming a warning, because nothing went wrong.
+    const { client, calls } = fakeGitHub()
+    await createDraftPost(
+      {
+        ...request,
+        // Text rather than bytes: a binary file would need a blob call the fake
+        // does not stub, and the note under test does not depend on either.
+        extraFiles: [{ path: 'public/static/images/a-post-1.jpg', content: 'x' }],
+        convertedAttachments: [{ filename: 'IMG_1234.HEIC', from: 'image/heic' }],
+      },
+      site,
+      client,
+    )
+
+    const pull = calls.find((call) => call.path.endsWith('/pulls'))!.body as Record<string, string>
+    expect(pull.body).toContain('1 converted from image/heic')
+    expect(pull.body).not.toContain('[!WARNING]')
+  })
+
   it('says nothing about attachments when none were rejected', async () => {
     const { client, calls } = fakeGitHub()
     await createDraftPost(request, site, client)

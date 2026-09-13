@@ -7,6 +7,11 @@ import {
   type RejectedAttachment,
 } from './attachments.ts'
 import { parseHeaders } from './headers.ts'
+import {
+  convertAttachments,
+  type ConversionNote,
+  type ImageConverter,
+} from './imageConversion.ts'
 import { slugify } from './markdown.ts'
 import { authenticateSender, extractSubjectToken, type SenderAuthPolicy } from './senderAuth.ts'
 import { stripSignature } from './signature.ts'
@@ -43,6 +48,12 @@ export interface EmailToPostOptions {
    * then becomes a rejection note rather than silently vanishing.
    */
   assets?: { directory: string; urlPrefix: string }
+  /**
+   * Converts formats a browser cannot render, chiefly HEIC from an iPhone.
+   * Omit and such an attachment is refused with advice instead — which is the
+   * behaviour a site without a converter configured keeps.
+   */
+  imageConverter?: ImageConverter
   /** Strip an RFC 3676 signature block from the body. Defaults to true. */
   stripSignature?: boolean
   /** Commit the post with `draft: true`. Defaults to false. */
@@ -81,6 +92,12 @@ export type EmailToPostResult =
       rejectedAttachments: RejectedAttachment[]
       /** Which rule placed each image. For logging; see `Placement`. */
       placements: Placement[]
+      /**
+       * Attachments converted to a renderable format on the way in. Worth
+       * surfacing: a reviewer seeing a JPEG where the sender swears they
+       * attached a HEIC should not have to guess why.
+       */
+      conversions: ConversionNote[]
     }
   | {
       ok: false
@@ -101,10 +118,10 @@ export type EmailToPostResult =
  * message, because telling an attacker which check failed is free
  * information.
  */
-export function emailToPost(
+export async function emailToPost(
   email: InboundEmail,
   options: EmailToPostOptions,
-): EmailToPostResult {
+): Promise<EmailToPostResult> {
   const auth = authenticateSender(
     {
       envelopeFrom: email.envelopeFrom,
@@ -168,6 +185,7 @@ export function emailToPost(
   let finalBody = body
   let rejectedAttachments: RejectedAttachment[] = []
   let placements: Placement[] = []
+  let conversions: ConversionNote[] = []
   let extraFiles: DraftPostRequest['extraFiles']
 
   if (attachments.length > 0) {
@@ -177,7 +195,11 @@ export function emailToPost(
         reason: 'this site is not configured to accept attachments',
       }))
     } else {
-      const plan = planAttachments(attachments, slugify(title), options.assets)
+      // Conversion first: a HEIC has to become a JPEG before the plan can
+      // accept it, and doing it here keeps `planAttachments` synchronous.
+      const converted = await convertAttachments(attachments, options.imageConverter)
+      conversions = converted.conversions
+      const plan = planAttachments(converted.attachments, slugify(title), options.assets)
       rejectedAttachments = plan.rejected
       if (plan.accepted.length > 0) {
         const placed = placeAttachments(body, plan.accepted)
@@ -193,6 +215,7 @@ export function emailToPost(
     viaSubjectToken: auth.viaSubjectToken,
     rejectedAttachments,
     placements,
+    conversions,
     request: {
       title,
       body: finalBody,
@@ -200,6 +223,7 @@ export function emailToPost(
       ...(summary ? { summary } : {}),
       ...(extraFiles ? { extraFiles } : {}),
       ...(rejectedAttachments.length > 0 ? { rejectedAttachments } : {}),
+      ...(conversions.length > 0 ? { convertedAttachments: conversions } : {}),
       date: email.date ?? (options.now ?? (() => new Date()))(),
       author: auth.sender,
       draft: options.draft === true,

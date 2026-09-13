@@ -88,6 +88,7 @@ async function uniqueBranchName(
 function pullRequestBody(request: DraftPostRequest, path: string): string {
   const attachments = request.extraFiles ?? []
   const rejected = request.rejectedAttachments ?? []
+  const converted = request.convertedAttachments ?? []
 
   return [
     'Draft post created by [post-inbox](https://github.com/TeamNickHart/post-inbox).',
@@ -96,7 +97,14 @@ function pullRequestBody(request: DraftPostRequest, path: string): string {
     `- **Date:** ${formatDate(request.date)}`,
     ...(request.authorFile ? [`- **Author:** ${request.authorFile}`] : []),
     ...(attachments.length > 0
-      ? [`- **Attachments:** ${attachments.length} committed alongside the post`]
+      ? [
+          `- **Attachments:** ${attachments.length} committed alongside the post` +
+            // A conversion is a success, so it rides on the attachments line
+            // rather than becoming a warning of its own.
+            (converted.length > 0
+              ? ` (${converted.length} converted from ${[...new Set(converted.map((item) => item.from))].join(', ')})`
+              : ''),
+        ]
       : []),
     '',
     // Listed rather than logged: the sender is not watching the Worker's logs,
