@@ -355,6 +355,53 @@ decode there. One caveat: a 3.4MB body failed through miniflare's remote-preview
 path succeeded — real inbound email does not touch that proxy, but full-size
 verification needs a deployed Worker.
 
+### Verified in production, on a real iPhone HEIC
+
+Emailed from iOS Gmail with the photo attached **from the Files app**, through
+the deployed Worker:
+
+| | Result |
+|---|---|
+| Conversion ran | `Converted IMG_6899.heic from image/heic`, and the pull request said `(1 converted from image/heic)` |
+| Committed as | `.jpg`, named from the slug |
+| Dimensions | **4284x5712 portrait** — the full 24 megapixels, not a thumbnail |
+| Orientation | **Upright, with no orientation tag** — rotation baked into pixels, confirmed by looking at the rendered image rather than inferring it from dimensions |
+| EXIF | **None at all.** No GPS, no device, no timestamps |
+| Colour | Natural, despite the ICC profile being dropped |
+
+That closes the risk flagged as most likely to sink this feature: a portrait
+photo rendering sideways. It was proven here on a real camera file, where the
+earlier local check used a synthetic `Orientation = 6` fixture.
+
+### Which iOS paths actually deliver a HEIC
+
+Mapped by sending the same photo three ways, and the answer matters because two
+of the three never exercise conversion at all:
+
+| How it was sent | What arrived |
+|---|---|
+| Photos share sheet → Gmail extension | **Rejected** — HTML-only, no plaintext body |
+| Gmail, attach from Photos | Gmail re-encoded it to JPEG itself |
+| **Gmail, attach from Files** | A real `.heic` — converted ✅ |
+
+So HEIC reaches the Worker less often than expected: iOS Gmail converts on send
+whenever it handles the photo itself, and only an opaque Files attachment
+survives. The feature still earns its place for macOS Mail, Files-attached mail,
+and forwarded iPhone photos — but the common case was already working.
+
+### The directly-attached JPEG path, also verified
+
+Incidentally proven by the same round of tests, on a real 24 megapixel camera
+file — which `stripImageMetadata` had never been checked against:
+
+- EXIF reduced to **32 bytes**: one IFD entry, the orientation, and nothing else
+- **GPS, device and timestamps removed**
+- ICC profile **kept**
+- 4284x5712 portrait, upright
+
+So `rebuildExif` does work on real camera output, not only on the synthetic EXIF
+in its unit tests.
+
 ## Known gaps
 
 - **Raw HTML in a post body does not render** — a deliberate consequence of
@@ -415,6 +462,31 @@ when the GitHub App lands, since App installation tokens are naturally
 per-installation.
 
 ## Backlog
+
+- **Signatures without the `-- ` delimiter are not stripped, and leak the
+  sender's address into a public repo.** iOS Gmail writes a signature as bare
+  trailing lines — name, email address, URL — with no RFC 3676 delimiter, so
+  `stripSignature` correctly finds nothing and the block lands in the post body.
+  Observed on three real test posts, each of which put a real email address on a
+  branch of a public repository.
+
+  A heuristic fallback is the fix, and it needs care: a trailing block of short
+  lines containing an address or a bare URL, only at the very end of the body,
+  and only when it is short. Eating real content would be worse than leaking a
+  signature, so this should err towards leaving text alone and be covered by
+  tests built from real messages. Until then, a sender's signature reaches the
+  repo whenever their client omits the delimiter.
+
+- **HTML-only mail is rejected, which breaks the most natural way to post a
+  photo from a phone.** The iOS Photos share sheet composes HTML with no
+  plaintext part, so `emailToPost` rejects it with "no plaintext body" — the
+  path a person would reach for first.
+
+  Smaller than it sounds: `postal-mime` already parses `email.html` and the
+  adapter simply discards it (`src/adapters/cloudflare/index.ts` passes only
+  `email.text`). So this is converting HTML to markdown for a known, narrow set
+  of clients rather than building a general converter — headings, bold, italic,
+  links, lists, and `<img>` tags mapped back to the attachment they reference.
 
 - **Two posts render with two H1s.** `MD025` is the one markdown rule left
   enabled, and it finds real problems in `nickhart-blog`:
@@ -580,10 +652,12 @@ per-installation.
     binding, or one setting `assets.convertImages: false`, still refuses them
     with the iPhone-setting advice.
 
-  Still unverified for the **JPEG** path: that a portrait photo's
-  `Orientation = 6` or `8` survives `rebuildExif`. The only real camera file
-  tested was upright and the orientation tests use synthetic EXIF, so if it does
-  not survive, a directly-attached portrait JPEG renders sideways.
+  For the **JPEG** path, `rebuildExif` is now verified against a real 24
+  megapixel camera file: EXIF came out as 32 bytes — one entry, the orientation
+  — with GPS, device and timestamps gone and the ICC profile kept. What remains
+  untested is specifically a JPEG whose orientation is `6` or `8` rather than
+  `1`; modern iPhones write true portrait dimensions instead of tagging a
+  rotated landscape frame, so such a file is harder to come by than expected.
 
   For the **converted** path this is now settled, and favourably: the Images
   binding bakes rotation into the pixels. A 400x200 JPEG tagged
