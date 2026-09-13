@@ -3,7 +3,7 @@
 **Working end to end on three real sites.** Email a site's address, get a pull
 request with a building preview.
 
-Last updated 2026-09-10. Worker version `77cd627b`, 180 tests passing.
+Last updated 2026-09-13. Worker version `77cd627b`, 180 tests passing.
 
 ## What works
 
@@ -23,7 +23,7 @@ Last updated 2026-09-10. Worker version `77cd627b`, 180 tests passing.
 | Per-site GitHub and subject tokens | Resolved per site, falling back to the global value |
 | Bounce messages | Generic for auth failures, specific once the sender is authenticated |
 | Per-sender author mapping | Resolved on both paths, validated, `pnpm check:authors` |
-| Author notification email | Working on one site — Resend, via a GitHub Action, with a working deep link |
+| Author notification email | All three sites — Resend, via a shared reusable workflow, with a deep link to the pull request |
 
 Three sites configured, each with its own inbound address, sender allowlist and
 API token. One GitHub token covers all three, scoped to the org.
@@ -31,9 +31,9 @@ API token. One GitHub token covers all three, scoped to the org.
 ## Author notifications
 
 When a `post-inbox/*` branch gets a successful **preview** deployment, the post's
-author is emailed a link straight to their post. Live on `jennyweis` only; the
-other two sites are deliberately not set up, since Vercel already notifies their
-owner.
+author is emailed a link straight to their post, plus a deep link to the pull
+request. **Live on all three sites**, each calling one shared reusable workflow in
+`TeamNickHart/.github`, pinned to the `v1` tag.
 
 Sent by a GitHub Action in the blog repo rather than by the Worker, and the
 reason is sequencing: post-inbox opens the pull request *before* Vercel has built
@@ -42,8 +42,9 @@ Action runs on `deployment_status`, by which point the preview URL exists.
 
 | Piece | Where |
 |---|---|
-| `.github/workflows/notify-author.yml` | blog repo (copy of `workflows/` here) |
-| `RESEND_API_KEY` | blog repo secret, on `jennyweis-blog` only |
+| `.github/workflows/notify-author.yml` | blog repo — a thin caller of the shared workflow |
+| the implementation | `TeamNickHart/.github`, `@v1` |
+| `RESEND_API_KEY` | blog repo secret, on all three (one Resend key) |
 | `AUTHOR_EMAIL_MAP` | blog repo secret, derived from `sites.jsonc` |
 | `NOTIFY_FROM` | blog repo *variable*, `no-reply@<site domain>` |
 
@@ -154,104 +155,81 @@ All of it was solving a problem the template had already solved.
 
 The only format it cannot handle is HEIC, which is refused at upload instead.
 
-## Shared workflow: working on weishart, one cosmetic fix left
+## Shared workflow: done, on all three sites
 
-**It sends.** A real email arrived from `no-reply@weishart.com` with a working
-deep link to `/blog/<slug>`, via the reusable workflow in
-`TeamNickHart/.github`. The post was found, `authors: ['nick']` resolved through
-`AUTHOR_EMAIL_MAP`, and the preview URL came from `deployment_status`. That is
-the first milestone of the rollout plan: prove it on `weishart`, then `nickhart`,
-then cut `jennyweis` over last.
+One reusable workflow in `TeamNickHart/.github` serves every site. Each blog repo
+holds a thin caller pinned to `@v1`. Verified end to end on all three: a real
+email per site with a working preview link and a deep link to the pull request.
 
-### What the five-cycle bisection established
+| Site | Verified by |
+|---|---|
+| `weishart-site` | PR #9 |
+| `nickhart-blog` | PR #16 |
+| `jennyweis-blog` | PR #19 |
 
-The earlier startup failures were **two real bugs**, both now fixed, and both
-the same lesson — a called workflow inherits far less than it looks like it
-should:
+### Grant `pull-requests: read` on the calling job
+
+This was the last bug, and it cost most of a day. **A top-level `permissions:`
+block does not reach a `workflow_call` job.** The token then falls back to the
+repo default — `Contents`, `Metadata`, `Packages`, no `PullRequests` — the pull
+request lookup 403s, and the email links the pull request *list* instead of the
+pull request.
+
+The log says so plainly in its `GITHUB_TOKEN Permissions` group, which is the
+first thing to read when a lookup 403s. `jennyweis`'s old per-repo copy is why
+the asymmetry is easy to miss: it declares `permissions` top-level and works,
+because a *self-contained* workflow has no called job to reach into.
+
+Two dead ends recorded so they are not tried again:
+
+| | |
+|---|---|
+| Passing `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` down as a secret | Cannot work — same token, same grant. Worse, GitHub rejects `secrets.GITHUB_TOKEN` passed by name into a reusable workflow, which is what made one run end `failure` instead of skipping. |
+| Declaring `permissions` in the caller *and* on the called job | The called workflow can only reduce the grant, never elevate it. |
+
+### What the bisection established
+
+Both earlier startup failures were the same lesson — a called workflow inherits
+far less than it looks like it should:
 
 | | |
 |---|---|
 | `vars.NOTIFY_FROM` | A called workflow cannot read the caller's variables. The caller reads it and passes `mail-from` as an input. |
 | `path: ${{ runner.temp }}` | The `runner` context does not exist at parse time, so it cannot appear in a `with:` block. `path` is repo-relative anyway. |
 
-Ruled out along the way, so nobody re-checks them: `actions/checkout@v5` (real
-tag), malformed YAML, top-level vs job-level `permissions`, the job-level `if:`,
-and every individual step — cycles 1–5 each loaded cleanly.
+Ruled out, so nobody re-checks them: `actions/checkout@v5`, malformed YAML, the
+job-level `if:`, and every individual step.
 
-### The one thing left
+### Pinning, and the gap that made it decorative
 
-The email links the pull request **list**, not the specific pull request. The
-lookup returns 403 because the reusable workflow's token lacks
-`pull-requests: read` — declaring it in the caller *and* on the job was not
-enough, so the caller now also passes `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`
-down as a secret. **That fix is pushed but unverified**, because GitHub stopped
-assigning runners partway through testing.
+All three callers use `@v1` rather than `@main`, so an upstream change reaches no
+site until the tag moves. `v1` is a *mutable* annotated tag: it is a release
+boundary, not an immutability guarantee. Swap it for a commit SHA per site if that
+ever matters more than picking up fixes by moving one tag.
 
-It fails safely: the lookup is checked for a non-zero exit *and* required to
-look like a URL, so a failure degrades to the list rather than leaking anything.
-An earlier version used `|| true` and emailed `gh`'s 403 JSON body in place of
-the link, because `gh` writes errors to stdout and a JSON blob is not an empty
-string.
+The pin was initially decorative, because the workflow fetched its own script
+with a hardcoded `ref: main` — the workflow was frozen and the code it executed
+was not. It now checks out at `github.job_workflow_sha`, the commit the workflow
+file itself was resolved from. Not `github.workflow_sha`, which is the *caller's*
+commit and does not exist in `.github`.
 
-### Picking this up
+**That one line is not yet proven.** Whether `job_workflow_sha` is populated
+inside a called workflow is a reading of the contexts reference, not an observed
+fact, so the send step echoes the SHA and fails loudly if the checkout produced
+no script. The next post's log settles it — look for `Shared script pinned to:`
+naming a real SHA.
 
-1. **Check whether runners are being assigned again.** Several runs sat `queued`
-   with `runner=NONE` from 04:35 onward, where five consecutive runs got one
-   within seconds earlier. Quota was 23/3,000 minutes and GitHub reported
-   Actions operational, so the cause was never identified. It cleared on its own
-   twice before.
-2. **Read the newest notify run** on `weishart-site` and check the
-   `Pull request:` line. A real URL means the token fix worked.
-3. **Look at one unexplained failure:** a run on `branch=main` from a `push`
-   event ended `failure` rather than skipping. A push has no
-   `deployment_status` context, so the `if:` should have skipped it cleanly.
-4. **Then roll out**: copy `weishart-site`'s caller to `nickhart-blog`, add
-   `RESEND_API_KEY` + `AUTHOR_EMAIL_MAP` secrets and a `NOTIFY_FROM` variable,
-   verify, then replace `jennyweis-blog`'s per-repo copy last.
+### Two traps that cost cycles, both about *what gets tested*
 
-### Cleanup owed
-
-- `post-inbox/bisect` branch on `weishart-site`, plus several `.gitignore`
-  trigger commits on `post-inbox/2026-09-13-testing-new-notification-emails`.
-- `weishart`'s `AUTHOR_EMAIL_MAP` points all four authors at Nick's address for
-  testing; the real map is derivable from `sites.jsonc`.
-- `jennyweis`'s map also points at Nick rather than Jenny, deliberately, until
-  the shared workflow replaces that site's copy.
-
-## The shared-workflow migration is parked
-
-Moving the notification workflow into `TeamNickHart/.github` as a reusable
-workflow **failed at startup on every event** and sent no email. It has been
-reverted: each blog repo holds its own copy again, which is the version that
-demonstrably works. The `.github` repo still contains the reusable version, and
-it still does not load.
-
-GitHub reports only "a workflow file issue" for a startup failure, with no logs
-and nothing on the check-run or annotations endpoints — so the only way forward
-is bisection from a minimal file. What that ruled out, in order:
-
-| Suspect | Verdict |
-|---|---|
-| `vars.NOTIFY_FROM` inside the called workflow | Real problem, not the cause. A called workflow genuinely does not inherit the caller's variables, so it is now an input — but the failure persisted. |
-| `actions/checkout@v5` | Real tag; exists. |
-| Malformed YAML | Parses cleanly. |
-| Top-level `permissions:` | Moved into the job; failure persisted. |
-| Job-level `if:` on `github.event` | Added to a minimal probe; **loaded and ran fine**. |
-| `path: ${{ runner.temp }}/shared` | Genuinely invalid — the `runner` context does not exist at parse time, so it cannot appear in a `with:` block. Fixed; failure persisted. |
-
-So a probe with `workflow_call` plus inputs, secrets and the `if:` loads and
-runs. The full file with its steps does not. **The fault is in the steps**, and
-finishing means adding them back one at a time — the first checkout, then the
-post-finding step, then the second checkout, then the send.
-
-Two lessons worth more than the bug:
-
-- **Verify a workflow fix by triggering a run yourself** before asking anyone to
-  test. Three test sends were spent on fixes that had not actually made a run
-  start.
-- **Do not append to a committed `.mdx` to force a Vercel rebuild.** `<!--` is
-  invalid MDX, so an HTML comment breaks the build — which then looks like a
-  product bug. Touch a non-content file instead.
+- **A `deployment_status` run loads the workflow from the branch that deployed**,
+  not from the default branch. A fix on `main` does nothing for a run triggered
+  by a preview on an older branch. The `Uses: owner/repo/....yml@ref (sha)` line
+  in the log is the only reliable evidence of which version ran — read it before
+  believing a green run.
+- **An empty commit produces no Vercel build**, so it cannot trigger a preview at
+  all: no file diff, no deployment, no event. Touch a non-content file instead.
+  And never append an HTML comment to a committed `.mdx` — `<!--` is invalid MDX
+  and breaks the build, which then looks like a product bug.
 
 ## Known gaps
 
@@ -261,7 +239,6 @@ Two lessons worth more than the bug:
   input markdown is already malformed in that case; CI is the backstop.
 - **`POST_AS_DRAFT=true` makes the post 404 on the preview.** Left as an option
   because merging unpublished is a legitimate workflow.
-- **Test PRs are open** on all three repos from verification runs.
 
 ## Next
 
@@ -280,11 +257,13 @@ which matters once someone else's post is being committed.
 
 **Hash the per-site API tokens** rather than comparing them in plaintext.
 
-**Per-sender author mapping is supported but not configured.** `weishart-site`
-already has `dominic.mdx`, `jenny.mdx`, `luca.mdx` and `nick.mdx` in
-`data/authors`, so adding an `authorsBySender` map to that site in `sites.jsonc`
-is all that remains — then `pnpm check:authors` and a test email from each
-address.
+**Per-sender author mapping: notifications done, inbound routing not.** Two
+different maps, easy to conflate. `weishart-site`'s `AUTHOR_EMAIL_MAP` now holds
+all four authors with their real addresses, so a post by any of them notifies the
+right person. What remains is the *inbound* direction — an `authorsBySender` map
+in `sites.jsonc`, so mail from each family member's address is attributed to
+their author rather than the site default — then `pnpm check:authors` and a test
+email from each address.
 
 **Per-site GitHub tokens are supported but not in use.** All three sites still
 fall back to the one org-scoped `GITHUB_TOKEN`. Setting
