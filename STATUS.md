@@ -154,6 +154,70 @@ All of it was solving a problem the template had already solved.
 
 The only format it cannot handle is HEIC, which is refused at upload instead.
 
+## Shared workflow: working on weishart, one cosmetic fix left
+
+**It sends.** A real email arrived from `no-reply@weishart.com` with a working
+deep link to `/blog/<slug>`, via the reusable workflow in
+`TeamNickHart/.github`. The post was found, `authors: ['nick']` resolved through
+`AUTHOR_EMAIL_MAP`, and the preview URL came from `deployment_status`. That is
+the first milestone of the rollout plan: prove it on `weishart`, then `nickhart`,
+then cut `jennyweis` over last.
+
+### What the five-cycle bisection established
+
+The earlier startup failures were **two real bugs**, both now fixed, and both
+the same lesson — a called workflow inherits far less than it looks like it
+should:
+
+| | |
+|---|---|
+| `vars.NOTIFY_FROM` | A called workflow cannot read the caller's variables. The caller reads it and passes `mail-from` as an input. |
+| `path: ${{ runner.temp }}` | The `runner` context does not exist at parse time, so it cannot appear in a `with:` block. `path` is repo-relative anyway. |
+
+Ruled out along the way, so nobody re-checks them: `actions/checkout@v5` (real
+tag), malformed YAML, top-level vs job-level `permissions`, the job-level `if:`,
+and every individual step — cycles 1–5 each loaded cleanly.
+
+### The one thing left
+
+The email links the pull request **list**, not the specific pull request. The
+lookup returns 403 because the reusable workflow's token lacks
+`pull-requests: read` — declaring it in the caller *and* on the job was not
+enough, so the caller now also passes `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`
+down as a secret. **That fix is pushed but unverified**, because GitHub stopped
+assigning runners partway through testing.
+
+It fails safely: the lookup is checked for a non-zero exit *and* required to
+look like a URL, so a failure degrades to the list rather than leaking anything.
+An earlier version used `|| true` and emailed `gh`'s 403 JSON body in place of
+the link, because `gh` writes errors to stdout and a JSON blob is not an empty
+string.
+
+### Picking this up
+
+1. **Check whether runners are being assigned again.** Several runs sat `queued`
+   with `runner=NONE` from 04:35 onward, where five consecutive runs got one
+   within seconds earlier. Quota was 23/3,000 minutes and GitHub reported
+   Actions operational, so the cause was never identified. It cleared on its own
+   twice before.
+2. **Read the newest notify run** on `weishart-site` and check the
+   `Pull request:` line. A real URL means the token fix worked.
+3. **Look at one unexplained failure:** a run on `branch=main` from a `push`
+   event ended `failure` rather than skipping. A push has no
+   `deployment_status` context, so the `if:` should have skipped it cleanly.
+4. **Then roll out**: copy `weishart-site`'s caller to `nickhart-blog`, add
+   `RESEND_API_KEY` + `AUTHOR_EMAIL_MAP` secrets and a `NOTIFY_FROM` variable,
+   verify, then replace `jennyweis-blog`'s per-repo copy last.
+
+### Cleanup owed
+
+- `post-inbox/bisect` branch on `weishart-site`, plus several `.gitignore`
+  trigger commits on `post-inbox/2026-09-13-testing-new-notification-emails`.
+- `weishart`'s `AUTHOR_EMAIL_MAP` points all four authors at Nick's address for
+  testing; the real map is derivable from `sites.jsonc`.
+- `jennyweis`'s map also points at Nick rather than Jenny, deliberately, until
+  the shared workflow replaces that site's copy.
+
 ## The shared-workflow migration is parked
 
 Moving the notification workflow into `TeamNickHart/.github` as a reusable
