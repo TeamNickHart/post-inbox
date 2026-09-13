@@ -24,6 +24,7 @@ Last updated 2026-09-13. Worker version `77cd627b`, 180 tests passing.
 | Bounce messages | Generic for auth failures, specific once the sender is authenticated |
 | Per-sender author mapping | Resolved on both paths, validated, `pnpm check:authors` |
 | Author notification email | All three sites — Resend, via a shared reusable workflow, with a deep link to the pull request |
+| MDX compile check | All three sites — blocking, verified red on invalid MDX and green once fixed |
 
 Three sites configured, each with its own inbound address, sender allowlist and
 API token. One GitHub token covers all three, scoped to the org.
@@ -231,23 +232,78 @@ naming a real SHA.
   And never append an HTML comment to a committed `.mdx` — `<!--` is invalid MDX
   and breaks the build, which then looks like a product bug.
 
+## MDX compile check: blocking on all three sites
+
+Every pull request compiles every post before it can merge. One reusable
+workflow in `TeamNickHart/.github@v1`; each site holds a thin caller. The
+required-check context is `mdx / mdx`, required on all three rulesets.
+
+It runs the site's **own** `contentlayer2 build` rather than a plugin list kept
+in the shared repo. The sites carry a substantial remark/rehype stack (gfm,
+math, katex, citation, prism, pliny's imgToJsx, github-blockquote-alert,
+preset-minify), and a copy of that list would drift — a check that disagrees
+with the real build is worse than no check, in both directions. Not `next
+build`, which also wants env vars and Vercel config and would fail for reasons
+unrelated to the post.
+
+Verified in both directions rather than assumed: on a post containing
+`<https://example.com>` it exits 1 and names the file, position and character;
+with the post removed, the same branch goes green. Vercel failed and passed on
+the same two commits, about 100 seconds later each time.
+
+### A required check must not have a `paths:` filter
+
+The check first shipped with `paths:` limiting it to `data/**` and the build
+files. That interacts badly with making it *required*: a pull request touching
+no matching path never runs the check, the required context never reports, and
+the pull request is **unmergeable with nothing to click**.
+
+Proved with a README-only pull request: `mergeable=MERGEABLE`,
+`state=BLOCKED`, Vercel and notify both green, and no `mdx / mdx` row at all. A
+required check that does not run is invisible rather than red, which is what
+makes it confusing to hit cold.
+
+So the filter is gone and the check runs on every pull request. About 100
+seconds, which is a good trade. The same filter had already hidden a subtler
+problem: the pull request that first *added* the check matched none of its own
+paths, so the check shipped to three repos without once being seen to run.
+
 ## Known gaps
 
 - **Raw HTML in a post body does not render** — a deliberate consequence of
   MDX escaping. Use `**bold**`. See the README.
 - **An unbalanced backtick can still produce a body that fails to build.** The
-  input markdown is already malformed in that case; CI is the backstop.
+  input markdown is already malformed in that case, and the MDX check now blocks
+  it at the pull request rather than letting Vercel find it.
 - **`POST_AS_DRAFT=true` makes the post 404 on the preview.** Left as an option
   because merging unpublished is a legitimate workflow.
 
 ## Next
 
-**Shared CI across the site repos.** A reusable GitHub Actions workflow, since
-all three sites share one stack and a post can reach a repo without passing
-through post-inbox — the web editor, or a direct push. MDX compile check and
-frontmatter validation as blocking checks; tag linting and spellcheck as
-advisory. None of the three repos has any workflow or branch protection today.
-See §11 of the design doc.
+**Shared CI: the blocking half is done, the advisory half is not.** All three
+repos now protect `main` (pull request required, `mdx / mdx` required) and
+compile every post on every pull request. What §11 of the design doc still
+wants:
+
+- **`cspell` and `markdownlint`, advisory.** Write to `$GITHUB_STEP_SUMMARY`
+  rather than a pull request comment — the summary needs no permissions at all,
+  where commenting needs `pull-requests: write`, a real escalation on a token
+  that could then modify pull requests.
+- **Tag linting**, last: normalize existing tags and flag a near-match
+  (`next-js` against `nextjs`), scanning posts' frontmatter rather than a
+  maintained list. Most likely of the four to annoy.
+- **Frontmatter validation** — but in *post-inbox*, at parse time, not as a
+  pull request check. The Worker generates that frontmatter, so an invalid date
+  is a bug to fix where it is introduced, and the email path can bounce with the
+  reason before a branch exists. A CI version is worth keeping only as a backstop
+  for web-editor and direct-push edits.
+
+**Notification email linking the check results.** The natural follow-on: the
+email says "checks are running, see them here" and points at the pull request's
+Checks tab. Deliberately a *link* rather than inline counts — the notification
+fires on `deployment_status` and the checks on `pull_request`, which are
+independent races, so reporting results inline would intermittently claim "no
+issues" while the checks were still running.
 
 **GitHub App instead of the PAT.** Removes the expiry landmine, scopes per-repo
 at the org level, and attributes commits to the app rather than to a person —
