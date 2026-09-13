@@ -107,6 +107,41 @@ All of it was solving a problem the template had already solved.
 
 The only format it cannot handle is HEIC, which is refused at upload instead.
 
+## The shared-workflow migration is parked
+
+Moving the notification workflow into `TeamNickHart/.github` as a reusable
+workflow **failed at startup on every event** and sent no email. It has been
+reverted: each blog repo holds its own copy again, which is the version that
+demonstrably works. The `.github` repo still contains the reusable version, and
+it still does not load.
+
+GitHub reports only "a workflow file issue" for a startup failure, with no logs
+and nothing on the check-run or annotations endpoints — so the only way forward
+is bisection from a minimal file. What that ruled out, in order:
+
+| Suspect | Verdict |
+|---|---|
+| `vars.NOTIFY_FROM` inside the called workflow | Real problem, not the cause. A called workflow genuinely does not inherit the caller's variables, so it is now an input — but the failure persisted. |
+| `actions/checkout@v5` | Real tag; exists. |
+| Malformed YAML | Parses cleanly. |
+| Top-level `permissions:` | Moved into the job; failure persisted. |
+| Job-level `if:` on `github.event` | Added to a minimal probe; **loaded and ran fine**. |
+| `path: ${{ runner.temp }}/shared` | Genuinely invalid — the `runner` context does not exist at parse time, so it cannot appear in a `with:` block. Fixed; failure persisted. |
+
+So a probe with `workflow_call` plus inputs, secrets and the `if:` loads and
+runs. The full file with its steps does not. **The fault is in the steps**, and
+finishing means adding them back one at a time — the first checkout, then the
+post-finding step, then the second checkout, then the send.
+
+Two lessons worth more than the bug:
+
+- **Verify a workflow fix by triggering a run yourself** before asking anyone to
+  test. Three test sends were spent on fixes that had not actually made a run
+  start.
+- **Do not append to a committed `.mdx` to force a Vercel rebuild.** `<!--` is
+  invalid MDX, so an HTML comment breaks the build — which then looks like a
+  product bug. Touch a non-content file instead.
+
 ## Known gaps
 
 - **Raw HTML in a post body does not render** — a deliberate consequence of
