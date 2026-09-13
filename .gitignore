@@ -152,3 +152,6 @@ src/generated/
 # Real site configuration: names the addresses that accept mail and the repos
 # written to. This repo is public — copy sites.example.jsonc instead.
 sites.jsonc
+
+# Throwaway HEIC verification harness (see STATUS.md)
+.heic-e2e/

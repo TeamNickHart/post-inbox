@@ -7,8 +7,9 @@ Send an email (or an HTTPS POST from a Shortcut) and a PR shows up on your
 blog repo with the post committed on its own branch. You review the preview
 deploy and merge when you are happy with it.
 
-**Status: proof of concept.** Single site, single sender, plaintext bodies,
-no attachments. See [Roadmap](#roadmap).
+**Status: working on three sites.** Multi-site routing, per-site senders and
+tokens, plaintext bodies, and attachments — images and PDFs, with HEIC
+converted and location data stripped. See [Roadmap](#roadmap).
 
 ## How it works
 
@@ -357,10 +358,16 @@ Known gap: there is no way to set tags from an email. See `STATUS.md`.
 **MVP:** multi-site and multi-user config, GitHub App instead of a PAT,
 Cloudflare rate limiting, and per-user allowlists.
 
-**Post-MVP:** attachments — images and PDFs committed into the repo, with a
-MIME allowlist and a size cap. HEIC conversion and resizing are their own
-problem, likely a GitHub Action on the PR rather than in the Worker
-(`sharp` needs native binaries a Worker cannot run).
+**Done since:** attachments — images and PDFs committed into the repo behind a
+MIME allowlist and a size cap, with location and device metadata stripped on
+the way in, and HEIC converted to JPEG by the Cloudflare Images binding.
+
+Conversion happens in the Worker after all, not in a GitHub Action. `sharp`
+does need native binaries a Worker cannot run — but prebuilt `sharp` cannot
+decode HEIC *anywhere*, because HEVC is patent-encumbered and excluded from its
+binaries, so the Action route would have needed a hand-built libheif and a
+second metadata-stripping pass. The Images binding decodes HEIC directly, and
+strips EXIF and bakes in rotation as a side effect.
 
 ## License
 

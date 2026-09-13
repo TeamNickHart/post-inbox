@@ -170,6 +170,13 @@ function validateAssets(site: SiteDefinition): void {
       throw new ConfigError(`site ${site.key} assets.${field} must not end with "/"`)
     }
   }
+  // Caught here rather than shrugged off, because the failure is silent
+  // otherwise: a truthy string like "false" would read as enabled.
+  if (assets.convertImages !== undefined && typeof assets.convertImages !== 'boolean') {
+    throw new ConfigError(
+      `site ${site.key} assets.convertImages must be true or false, not ${typeof assets.convertImages}`,
+    )
+  }
 }
 
 /**

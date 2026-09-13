@@ -6,6 +6,17 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
+  },
+
+  // Converts HEIC to JPEG on the way in, since no browser renders HEIC and an
+  // iPhone shoots it by default. Free-tier allowance is 5,000 unique
+  // transformations a month; each conversion is logged so usage stays visible.
+  //
+  // `wrangler dev` without `--remote` uses a low-fidelity local implementation
+  // that supports only width/height/rotate/format, so HEIC will not decode
+  // there — use `wrangler dev --remote` to exercise conversion locally.
+  "images": {
+    "binding": "IMAGES"
   }
 
   // Site configuration lives in `sites.jsonc`, which is gitignored because

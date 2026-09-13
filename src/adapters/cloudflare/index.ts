@@ -11,7 +11,9 @@ import {
   siteForRequestKey,
   SITES,
   type Env,
+  type EnvWithBindings,
 } from './config.ts'
+import { cloudflareImageConverter } from './imageConverter.ts'
 
 /**
  * Cloudflare adapter: two entry points, one shared core call.
@@ -23,7 +25,7 @@ import {
  * nothing about Cloudflare.
  */
 export default {
-  async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
+  async email(message: ForwardableEmailMessage, env: EnvWithBindings): Promise<void> {
     // The destination address selects the site. `message.to` is the envelope
     // recipient, which is what Email Routing actually delivered to — not a
     // header a sender could have written.
@@ -39,7 +41,7 @@ export default {
 
     const email = await PostalMime.parse(message.raw)
 
-    const decision = emailToPost(
+    const decision = await emailToPost(
       {
         // The envelope sender, not the `From:` header — the header is
         // trivially forgeable and is not what the platform authenticated.
@@ -53,6 +55,13 @@ export default {
       },
       {
         ...(site.assets ? { assets: site.assets } : {}),
+        // Conversion is on unless the site opts out: a site that accepts
+        // attachments wants renderable ones, and without this an iPhone photo
+        // is refused rather than committed. No binding means no converter,
+        // which degrades to that same refusal.
+        ...(env.IMAGES && site.assets?.convertImages !== false
+          ? { imageConverter: cloudflareImageConverter(env.IMAGES) }
+          : {}),
         policy: {
           allowedSenders: secrets.allowedSenders,
           subjectToken: secrets.subjectToken,
@@ -79,6 +88,12 @@ export default {
       console.log(
         `Placed ${placement.filename} on ${site.key} by ${placement.rule} (related=${placement.related})`,
       )
+    }
+
+    for (const conversion of decision.conversions) {
+      // Logged so the free-tier transformation count is visible before it is a
+      // surprise, and so a conversion is traceable if an image looks wrong.
+      console.log(`Converted ${conversion.filename} from ${conversion.from} for ${site.key}`)
     }
 
     for (const rejected of decision.rejectedAttachments) {

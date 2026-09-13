@@ -25,6 +25,7 @@ Last updated 2026-09-13. Worker version `77cd627b`, 180 tests passing.
 | Per-sender author mapping | Resolved on both paths, validated, `pnpm check:authors` |
 | Author notification email | All three sites — Resend, via a shared reusable workflow, with a deep link to the pull request |
 | MDX compile check | All three sites — blocking, verified red on invalid MDX and green once fixed |
+| HEIC conversion | Cloudflare Images binding, verified end to end against a real iPhone HEIC |
 
 Three sites configured, each with its own inbound address, sender allowlist and
 API token. One GitHub token covers all three, scoped to the org.
@@ -154,7 +155,8 @@ plus a bot pushing converted files back to the pull request branch — which wou
 also have re-triggered the notification workflow and sent two emails per post.
 All of it was solving a problem the template had already solved.
 
-The only format it cannot handle is HEIC, which is refused at upload instead.
+The only format it cannot handle is HEIC, which the Worker converts to JPEG at
+upload instead — see below.
 
 ## Shared workflow: done, on all three sites
 
@@ -267,6 +269,91 @@ So the filter is gone and the check runs on every pull request. About 100
 seconds, which is a good trade. The same filter had already hidden a subtler
 problem: the pull request that first *added* the check matched none of its own
 paths, so the check shipped to three repos without once being seen to run.
+
+## HEIC conversion: in the Worker, via Cloudflare Images
+
+An iPhone shoots HEIC by default and iOS Gmail attaches it as HEIC, so this was
+the one format that reached a post as a refusal rather than an image. The Worker
+now converts it to JPEG before anything else looks at it.
+
+**The refusal it replaces was worse than it appeared.** Its message told the
+sender to change a camera setting, but a rejected attachment is surfaced in the
+*pull request body*, not a bounce — only whole-message rejections bounce. So the
+sender got a notification saying the post was ready, with the photo silently
+missing unless they opened the PR. The advice never reached anyone.
+
+### Why not a GitHub Action, which was the recorded plan
+
+`sharp` needs native binaries a Worker cannot run — that part was right. But
+**prebuilt `sharp` cannot decode HEIC anywhere.** Tested against a real iPhone
+HEIC: it reads the container (4284x5712, EXIF present) and then fails
+`bad seek` on pixel decode, because HEVC is patent-encumbered and excluded from
+the prebuilt binaries ([sharp#3680](https://github.com/lovell/sharp/issues/3680)).
+So the Action route needed a hand-built libheif, plus `contents: write`, plus
+`ref: github.head_ref`, plus a second metadata-stripping pass — and
+`heif-convert` copies EXIF including GPS straight into the JPEG.
+
+Worse, a commit made with `GITHUB_TOKEN` does not re-trigger workflows, so the
+required `mdx / mdx` check would not re-run and the pull request would sit on a
+stale status.
+
+A Vercel route was a dead end for a different reason: `remarkImgToJsx` reads
+image files off disk at *build* time, so a runtime endpoint cannot get the JPEG
+into the repo at all.
+
+### What the binding does, all of it measured
+
+| | Observed |
+|---|---|
+| HEIC decode | `info()` reports `image/heic`; output is a valid JPEG at source dimensions |
+| EXIF | **Stripped entirely.** 2,934 bytes in, only `APP0/JFIF` out — no APP1, no GPS |
+| Rotation | **Baked into pixels.** 400x200 tagged `Orientation = 6` came back 200x400, untagged |
+| Colour | Channel means within ~1.6/255 of a libheif reference decode, despite ICC being dropped |
+| Non-image | Clean throw, code `9412` — also catches video, so a misdeclared `.mov` fails safely |
+| Bad HEIC | Clean throw, code `9516`, usefully distinct from 9412 |
+
+The binding exposes **no `metadata` option** — that exists on the URL-based
+transform API but not in `ImageTransform` — so stripping is not configured, it is
+simply what the re-encode does. `stripImageMetadata` still runs afterwards as
+defence in depth and finds nothing left, which is why a converted attachment
+reports `strippedMetadata: []` while a directly-attached JPEG still reports
+`GPS`, `device`, `timestamp`, `XMP`, `APP13`.
+
+### Shape of it
+
+Conversion is a pre-pass, so `planAttachments` stays synchronous and pure:
+`convertAttachments` (`src/core/imageConversion.ts`) runs first, and
+`emailToPost` became `async` to await it. Detection is by content —
+`looksLikeHeic` reads the ISO-BMFF `ftyp` brand — because the declared type is
+the sender's client's opinion and Gmail sends `application/octet-stream`. The
+brand list is an allowlist, since `ftyp` fronts MP4 and QuickTime too.
+
+The only Cloudflare-aware file is `src/adapters/cloudflare/imageConverter.ts`.
+`ImageConverter.toJpeg` returns `null` rather than throwing, because declining is
+the expected path — and every decline lands on the pre-existing refusal, so the
+post still gets created. A failed conversion sets `refusalOverride`, so the
+message does not blame a camera setting that was not the problem.
+
+A JPEG never reaches the converter: no transformation is billed, and its ICC
+profile survives. Free tier is 5,000 unique transformations a month and each
+conversion is logged, so usage is visible before it is a surprise.
+
+### Verification
+
+`.heic-e2e/` (gitignored) is a throwaway harness that drives the *shipped*
+converter and pipeline against the live binding:
+
+```
+npx wrangler dev --remote --config .heic-e2e/wrangler.jsonc --port 8798
+curl -s -X POST --data-binary @photo.heic -H 'x-mime: image/heic' localhost:8798/
+```
+
+`wrangler dev` without `--remote` uses a low-fidelity local Images
+implementation supporting only width/height/rotate/format, so HEIC will not
+decode there. One caveat: a 3.4MB body failed through miniflare's remote-preview
+*proxy* (`RangeError` inside ProxyWorker) while a small HEIC through the same
+path succeeded — real inbound email does not touch that proxy, but full-size
+verification needs a deployed Worker.
 
 ## Known gaps
 
@@ -487,18 +574,22 @@ per-installation.
     it safely.
   - **PNG and WebP** have only their known metadata chunks removed. Neither has
     been checked against a real camera file the way JPEG has.
-  - **HEIC/HEIF are refused**, not sanitised. No browser renders them, and
-    neither `next/image` nor the `sharp` build on most hosts can decode one — so
-    committing one yields a broken image. It would also arrive unsanitised,
-    since stripping metadata from an ISO base media container is a different
-    problem from stripping a JPEG segment, which would put its GPS coordinates
-    in the repo. The bounce names the iPhone setting that fixes it. Two clients
-    already convert on send (Gmail web and macOS Mail both did in testing), so
-    a sender rarely sees this.
+  - **HEIC/HEIF are converted to JPEG** by the Cloudflare Images binding before
+    anything else looks at them, so the sanitiser sees a JPEG it understands
+    rather than an ISO base media container it does not. A site without the
+    binding, or one setting `assets.convertImages: false`, still refuses them
+    with the iPhone-setting advice.
 
-  Also unverified: that a **portrait** photo's `Orientation = 6` or `8` survives.
-  The only real camera file tested was upright, and the orientation tests use
-  synthetic EXIF. If it does not survive, portrait photos render sideways.
+  Still unverified for the **JPEG** path: that a portrait photo's
+  `Orientation = 6` or `8` survives `rebuildExif`. The only real camera file
+  tested was upright and the orientation tests use synthetic EXIF, so if it does
+  not survive, a directly-attached portrait JPEG renders sideways.
+
+  For the **converted** path this is now settled, and favourably: the Images
+  binding bakes rotation into the pixels. A 400x200 JPEG tagged
+  `Orientation = 6` came back 200x400 with no orientation tag at all, so a
+  converted portrait photo is upright without depending on a tag surviving
+  anything.
 
 - **Place images by MIME part order, for clients that write no placeholder.**
   macOS Mail composes `multipart/mixed` with images interleaved between text
