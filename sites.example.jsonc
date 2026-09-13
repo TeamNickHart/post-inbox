@@ -31,7 +31,16 @@
 
       // For the Tailwind Nextjs Starter Blog these are the right values.
       "contentPath": "data/blog",
-      "extension": ".mdx"
+      "extension": ".mdx",
+
+      // Where emailed attachments are committed, and the URL the site serves
+      // that directory at. Omit the whole block to refuse attachments — they
+      // are then reported in the pull request rather than silently dropped.
+      // These are the right values for the Tailwind starter.
+      "assets": {
+        "directory": "public/static/images",
+        "urlPrefix": "/static/images"
+      }
 
       // Optional, for a site with several authors: map an envelope address to
       // a file in the site's `data/authors` directory. Anyone unlisted posts

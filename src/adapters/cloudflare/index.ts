@@ -1,7 +1,8 @@
-import PostalMime from 'postal-mime'
+import PostalMime, { type Email } from 'postal-mime'
 import { createDraftPost } from '../../core/createDraftPost.ts'
 import { GitHubClient, GitHubError } from '../../core/github.ts'
 import { emailToPost } from '../../core/emailToPost.ts'
+import type { InboundAttachment } from '../../core/attachments.ts'
 import { authorFileForSender } from '../../core/sites.ts'
 import type { DraftPostRequest } from '../../core/types.ts'
 import {
@@ -48,8 +49,10 @@ export default {
         arcAuthenticationResults: message.headers.get('arc-authentication-results'),
         text: email.text,
         date: email.date ? new Date(email.date) : null,
+        attachments: toInboundAttachments(email.attachments),
       },
       {
+        ...(site.assets ? { assets: site.assets } : {}),
         policy: {
           allowedSenders: secrets.allowedSenders,
           subjectToken: secrets.subjectToken,
@@ -68,6 +71,20 @@ export default {
       // from, and the sender needs to know what to fix.
       message.setReject(bounceMessage(decision.senderMessage))
       return
+    }
+
+    for (const placement of decision.placements) {
+      // Which rule fired, so real mail tells us whether the client-agnostic
+      // cascade keeps holding. See `Placement` in core/attachments.ts.
+      console.log(
+        `Placed ${placement.filename} on ${site.key} by ${placement.rule} (related=${placement.related})`,
+      )
+    }
+
+    for (const rejected of decision.rejectedAttachments) {
+      // The post is still created; the sender is told which files did not make
+      // it, since a silently dropped photo is worse than a noisy one.
+      console.warn(`Attachment not committed for ${site.key}: ${rejected.filename} — ${rejected.reason}`)
     }
 
     if (decision.viaSubjectToken) {
@@ -167,6 +184,44 @@ export default {
       return json({ error: 'Failed to create draft post' }, 502)
     }
   },
+}
+
+/**
+ * Reshape `postal-mime` attachments into the core's shape.
+ *
+ * `content` is a union — an ArrayBuffer, a Uint8Array, or a string when the
+ * part decoded as text — so each case is normalised to bytes rather than
+ * assumed. A part with no filename is skipped: it cannot be matched to a
+ * mention in the body, and is usually an inline signature image rather than
+ * something the author meant to attach.
+ */
+function toInboundAttachments(attachments: Email['attachments']): InboundAttachment[] {
+  const inbound: InboundAttachment[] = []
+
+  for (const attachment of attachments) {
+    if (!attachment.filename) continue
+
+    let bytes: Uint8Array
+    if (typeof attachment.content === 'string') {
+      bytes = new TextEncoder().encode(attachment.content)
+    } else if (attachment.content instanceof Uint8Array) {
+      bytes = attachment.content
+    } else {
+      bytes = new Uint8Array(attachment.content)
+    }
+
+    inbound.push({
+      filename: attachment.filename,
+      mimeType: attachment.mimeType,
+      bytes,
+      // RFC 2387 multipart/related membership: how a client marks an image
+      // embedded in the body. Not `disposition`, which reads "attachment" for
+      // embedded and attached parts alike.
+      ...(attachment.related ? { related: true } : {}),
+    })
+  }
+
+  return inbound
 }
 
 /**

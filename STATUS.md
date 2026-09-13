@@ -137,6 +137,58 @@ turned away, and what the sender should see. The exact sender-facing text is
 asserted against what those docs promise, so a message cannot be reworded
 without the documentation failing the build.
 
+## Image resizing and format conversion: already handled
+
+Worth writing down, because it was nearly built twice. The Tailwind starter
+already pipes every markdown image through `next/image`: `remarkImgToJsx`
+rewrites `![](...)` into the `Image` component, which wraps `NextImage`, and
+`next.config.js` only disables optimization when `UNOPTIMIZED` is set. So on
+Vercel, resizing and modern-format delivery happen for free, from whatever
+source file the post points at.
+
+That means **no conversion step, no originals directory, no manifest, no
+gitignoring `public/`, and no CI image job.** An earlier plan had all of those,
+plus a bot pushing converted files back to the pull request branch — which would
+also have re-triggered the notification workflow and sent two emails per post.
+All of it was solving a problem the template had already solved.
+
+The only format it cannot handle is HEIC, which is refused at upload instead.
+
+## The shared-workflow migration is parked
+
+Moving the notification workflow into `TeamNickHart/.github` as a reusable
+workflow **failed at startup on every event** and sent no email. It has been
+reverted: each blog repo holds its own copy again, which is the version that
+demonstrably works. The `.github` repo still contains the reusable version, and
+it still does not load.
+
+GitHub reports only "a workflow file issue" for a startup failure, with no logs
+and nothing on the check-run or annotations endpoints — so the only way forward
+is bisection from a minimal file. What that ruled out, in order:
+
+| Suspect | Verdict |
+|---|---|
+| `vars.NOTIFY_FROM` inside the called workflow | Real problem, not the cause. A called workflow genuinely does not inherit the caller's variables, so it is now an input — but the failure persisted. |
+| `actions/checkout@v5` | Real tag; exists. |
+| Malformed YAML | Parses cleanly. |
+| Top-level `permissions:` | Moved into the job; failure persisted. |
+| Job-level `if:` on `github.event` | Added to a minimal probe; **loaded and ran fine**. |
+| `path: ${{ runner.temp }}/shared` | Genuinely invalid — the `runner` context does not exist at parse time, so it cannot appear in a `with:` block. Fixed; failure persisted. |
+
+So a probe with `workflow_call` plus inputs, secrets and the `if:` loads and
+runs. The full file with its steps does not. **The fault is in the steps**, and
+finishing means adding them back one at a time — the first checkout, then the
+post-finding step, then the second checkout, then the send.
+
+Two lessons worth more than the bug:
+
+- **Verify a workflow fix by triggering a run yourself** before asking anyone to
+  test. Three test sends were spent on fixes that had not actually made a run
+  start.
+- **Do not append to a committed `.mdx` to force a Vercel rebuild.** `<!--` is
+  invalid MDX, so an HTML comment breaks the build — which then looks like a
+  product bug. Touch a non-content file instead.
+
 ## Known gaps
 
 - **Raw HTML in a post body does not render** — a deliberate consequence of
@@ -289,6 +341,65 @@ per-installation.
     `Message-ID` must never be sufficient to change a post.
   - **Attachments are a prerequisite** for the case that motivates this most —
     forgotten images. See the attachments item below.
+
+- **Further image metadata sanitation at upload.** GPS, device model,
+  timestamps, maker notes, XMP and the embedded thumbnail are stripped from
+  JPEG today, with orientation deliberately preserved and the ICC profile kept
+  for colour fidelity. What survives on a real iPhone photo, checked segment by
+  segment:
+
+  - **MPF (Multi-Picture Format), 88 bytes.** An Apple multi-image index, and it
+    survives *by accident*: the strip rule covers `APP3..APP15`, and MPF sits in
+    APP2 alongside ICC. It can carry offsets to a second embedded image. Should
+    be dropped — distinguish it from ICC by the segment's identifier string
+    rather than by marker number.
+  - **ICC colour profile, 552 bytes.** `Display P3`, which names a device class
+    rather than a device. Worth keeping: dropping it visibly shifts the colour
+    of a wide-gamut photo. A build step that converts to sRGB could then drop
+    it safely.
+  - **PNG and WebP** have only their known metadata chunks removed. Neither has
+    been checked against a real camera file the way JPEG has.
+  - **HEIC/HEIF are refused**, not sanitised. No browser renders them, and
+    neither `next/image` nor the `sharp` build on most hosts can decode one — so
+    committing one yields a broken image. It would also arrive unsanitised,
+    since stripping metadata from an ISO base media container is a different
+    problem from stripping a JPEG segment, which would put its GPS coordinates
+    in the repo. The bounce names the iPhone setting that fixes it. Two clients
+    already convert on send (Gmail web and macOS Mail both did in testing), so
+    a sender rarely sees this.
+
+  Also unverified: that a **portrait** photo's `Orientation = 6` or `8` survives.
+  The only real camera file tested was upright, and the orientation tests use
+  synthetic EXIF. If it does not survive, portrait photos render sideways.
+
+- **Place images by MIME part order, for clients that write no placeholder.**
+  macOS Mail composes `multipart/mixed` with images interleaved between text
+  parts — "HEIC image:", image, "JPG image:", image — and writes no
+  `[image: ...]` marker anywhere. `postal-mime` flattens that to a single text
+  blob, so the interleaving is lost and every image is appended at the bottom
+  under one heading, away from the label it belonged to.
+
+  Recovering it means walking the MIME tree in order rather than reading
+  `email.text`, which `postal-mime`'s top-level API does not expose. A real
+  feature, not a patch.
+
+  Worth recording what the two real clients actually send, because no single
+  field identifies an embedded image:
+
+  | | Gmail web | macOS Mail |
+  |---|---|---|
+  | container | `multipart/related` | `multipart/mixed` |
+  | `disposition` | `attachment` | `inline` |
+  | `related` | `true` | absent |
+  | `contentId` | present | absent |
+  | placeholder in text | `[image: name]` | none |
+
+  So `disposition` alone would miss Gmail, and `related` alone would miss
+  macOS Mail. The filename-mention and append fallbacks are what carry both.
+
+- **HTML email → markdown**, via `turndown`. Currently rejected. The real
+  message carries an HTML part alongside the plaintext one, so the input is
+  already there — it is only ignored.
 
 - **Email bare media into the asset library.** Needs discussion before
   building; the easy path is small and the interesting parts are not.

@@ -93,6 +93,33 @@ describe('createDraftPost', () => {
     expect(pull.title).toBe('Draft: Hello From Email')
   })
 
+  it('lists rejected attachments in the pull request body', async () => {
+    // The post succeeded, so bouncing the message would throw the writing away
+    // to report a dropped photo. But logging alone left the sender with no way
+    // to know an attachment vanished — which is what happened before this.
+    const { client, calls } = fakeGitHub()
+    await createDraftPost(
+      {
+        ...request,
+        rejectedAttachments: [{ filename: 'photo.heic', reason: 'HEIC is not supported' }],
+      },
+      site,
+      client,
+    )
+
+    const pull = calls.find((call) => call.path.endsWith('/pulls'))!.body as Record<string, string>
+    expect(pull.body).toContain('photo.heic')
+    expect(pull.body).toContain('HEIC is not supported')
+  })
+
+  it('says nothing about attachments when none were rejected', async () => {
+    const { client, calls } = fakeGitHub()
+    await createDraftPost(request, site, client)
+
+    const pull = calls.find((call) => call.path.endsWith('/pulls'))!.body as Record<string, string>
+    expect(pull.body).not.toContain('WARNING')
+  })
+
   it('never names an email address in the pull request body', async () => {
     // The body is permanent, readable by every collaborator, and quoted into
     // notification emails and Actions logs. `request.author` is the sender's

@@ -1,3 +1,5 @@
+import type { FileToCommit } from './github.ts'
+
 /**
  * Host-agnostic types for the post-inbox core.
  *
@@ -21,6 +23,18 @@ export interface DraftPostRequest {
   authorFile?: string
   tags?: string[]
   summary?: string
+  /** Extra files to include in the same commit, e.g. attachments. */
+  extraFiles?: FileToCommit[]
+  /**
+   * Attachments that could not be committed, as `filename — reason` notes.
+   *
+   * Surfaced in the pull request body rather than bounced. The post itself
+   * succeeded, so rejecting the message would throw the writing away to report
+   * a dropped photo — the wrong trade. But saying nothing is worse: a silently
+   * dropped attachment is invisible to the sender, which is exactly what
+   * happened before this existed.
+   */
+  rejectedAttachments?: { filename: string; reason: string }[]
   /**
    * Value for the post's `draft` frontmatter field.
    *
@@ -48,6 +62,17 @@ export interface SiteConfig {
   contentPath: string
   /** File extension for posts, including the dot, e.g. ".mdx". */
   extension: string
+  /**
+   * Where attachments are committed and how the site serves them. Omit to
+   * refuse attachments for this site.
+   *
+   * For the Tailwind Nextjs Starter Blog: directory `public/static/images`,
+   * urlPrefix `/static/images`.
+   */
+  assets?: {
+    directory: string
+    urlPrefix: string
+  }
 }
 
 /** The result of a successful post creation. */

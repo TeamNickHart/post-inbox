@@ -130,9 +130,46 @@ export function validateSites(file: unknown): SiteDefinition[] {
     }
 
     validateAuthorMap(site)
+    validateAssets(site)
   }
 
   return sites
+}
+
+/**
+ * Check a site's `assets` block, if it declares one.
+ *
+ * A site without one refuses attachments outright, which is a valid choice —
+ * but a half-filled block would commit files somewhere the site does not serve,
+ * so both fields are required together.
+ */
+function validateAssets(site: SiteDefinition): void {
+  const assets = site.assets
+  if (assets === undefined) return
+
+  if (typeof assets !== 'object' || assets === null || Array.isArray(assets)) {
+    throw new ConfigError(`site ${site.key} has an assets block that is not an object`)
+  }
+  for (const field of ['directory', 'urlPrefix'] as const) {
+    if (typeof assets[field] !== 'string' || assets[field].trim() === '') {
+      throw new ConfigError(`site ${site.key} assets is missing \`${field}\``)
+    }
+  }
+  if (assets.directory.startsWith('/') || assets.directory.includes('..')) {
+    throw new ConfigError(
+      `site ${site.key} assets.directory must be a repo-relative path with no "..": ${assets.directory}`,
+    )
+  }
+  if (!assets.urlPrefix.startsWith('/')) {
+    throw new ConfigError(
+      `site ${site.key} assets.urlPrefix must start with "/" — it is a site-absolute URL: ${assets.urlPrefix}`,
+    )
+  }
+  for (const field of ['directory', 'urlPrefix'] as const) {
+    if (assets[field].endsWith('/')) {
+      throw new ConfigError(`site ${site.key} assets.${field} must not end with "/"`)
+    }
+  }
 }
 
 /**
