@@ -82,12 +82,16 @@ const MARKDOWN_STRUCTURE = /^(?:#{1,6} |[-*+] |\d+\. |>|```|!\[)/
 /**
  * A block this long is prose that happens to mention an address.
  *
- * Seven, because that is what a real business signature needs: name, title,
- * company, two address lines, email, phone. Measured against constructed
- * examples rather than guessed — an elaborate corporate signature came to
- * seven lines, and a personal one to two.
+ * Five, sized for the personal signatures this actually sees — a name, maybe a
+ * title, an address and a URL. A full corporate signature (name, title,
+ * company, two address lines, email, phone) runs to seven and will be left in,
+ * deliberately: raising the cap to fit one costs false positives on real
+ * writing, and the people posting here send from personal accounts.
+ *
+ * Someone with a longer signature should use the `-- ` delimiter, which is
+ * matched exactly and needs no guessing at all.
  */
-const MAX_BLOCK_LINES = 7
+const MAX_BLOCK_LINES = 5
 /**
  * A line this long is a sentence, not a contact detail. **Per line**, not for
  * the block, so a long signature of short lines is still caught.

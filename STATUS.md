@@ -26,6 +26,7 @@ Last updated 2026-09-13. Worker version `77cd627b`, 180 tests passing.
 | Author notification email | All three sites — Resend, via a shared reusable workflow, with a deep link to the pull request |
 | MDX compile check | All three sites — blocking, verified red on invalid MDX and green once fixed |
 | HEIC conversion | Cloudflare Images binding, verified end to end against a real iPhone HEIC |
+| Signature stripping | The `-- ` delimiter, plus a narrow fallback for clients that send none |
 
 Three sites configured, each with its own inbound address, sender allowlist and
 API token. One GitHub token covers all three, scoped to the org.
@@ -402,6 +403,49 @@ file — which `stripImageMetadata` had never been checked against:
 So `rebuildExif` does work on real camera output, not only on the synthetic EXIF
 in its unit tests.
 
+## Signature stripping, including without a delimiter
+
+`-- ` on its own line (RFC 3676) is matched exactly and everything below it
+goes. That is the reliable path and the README tells senders to set it up.
+
+**iOS Gmail sends no delimiter at all**, appending the signature as bare
+trailing lines — which put a real name, address and URL into three of four test
+posts, on branches of a public repo. That made it a privacy bug rather than a
+tidiness one, so a fallback now removes a trailing block that is unmistakably
+contact details.
+
+The module previously refused shape-based heuristics outright, and the reason
+was sound: eating a paragraph of someone's writing is worse than leaving a
+signature for them to delete. The fallback is built to keep that principle —
+every condition must hold, and anything ambiguous is left alone:
+
+| Condition | Why |
+|---|---|
+| Last block, after a blank line, content above it | A post that is only a signature survives |
+| At most 5 lines, none over 60 characters | Per line, not total. Sized for the personal signatures this sees |
+| No markdown structure | A heading, list, quote, fence or image means it is the post |
+| Not directly under a heading | A `## Links` section of bare URLs is content — and the heading is in the *previous* block, so it has to be looked for there |
+| **One of the last two lines is nothing but an address or URL** | The load-bearing rule |
+
+That last one is what actually separates a signature from prose. A signature
+*ends* with its contact details; prose mentions a link mid-thought and carries
+on. Without it, a closing paragraph, a lyric block, a recipe list and a
+changelog all matched — each being short lines containing a URL.
+
+**Deliberately not stripped:** a signature of only a name, which reads exactly
+like a closing line; a corporate block over 5 lines; anything containing
+markdown. Seven lines was tried — name, title, company, two address lines,
+email, phone — and reverted: the people posting here send from personal
+accounts, and fitting a corporate signature costs false positives on real
+writing. `-- ` is the answer for anyone whose signature is longer.
+
+Also rejected, having measured it: scoring the fraction of lines that "look
+like" contact details. Signatures scored 1.00 — but so did a changelog, and a
+recipe scored 0.86. Not a usable separation.
+
+Thresholds are named constants at the top of `src/core/signature.ts`, each
+carrying its reasoning, and `STRIP_SIGNATURE=false` disables both rules.
+
 ## Known gaps
 
 - **Raw HTML in a post body does not render** — a deliberate consequence of
@@ -462,20 +506,6 @@ when the GitHub App lands, since App installation tokens are naturally
 per-installation.
 
 ## Backlog
-
-- **Signatures without the `-- ` delimiter are not stripped, and leak the
-  sender's address into a public repo.** iOS Gmail writes a signature as bare
-  trailing lines — name, email address, URL — with no RFC 3676 delimiter, so
-  `stripSignature` correctly finds nothing and the block lands in the post body.
-  Observed on three real test posts, each of which put a real email address on a
-  branch of a public repository.
-
-  A heuristic fallback is the fix, and it needs care: a trailing block of short
-  lines containing an address or a bare URL, only at the very end of the body,
-  and only when it is short. Eating real content would be worse than leaking a
-  signature, so this should err towards leaving text alone and be covered by
-  tests built from real messages. Until then, a sender's signature reaches the
-  repo whenever their client omits the delimiter.
 
 - **HTML-only mail is rejected, which breaks the most natural way to post a
   photo from a phone.** The iOS Photos share sheet composes HTML with no

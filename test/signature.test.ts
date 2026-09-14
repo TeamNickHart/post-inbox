@@ -123,13 +123,20 @@ describe('signatures with no delimiter at all', () => {
     expect(stripSignature(tooWide)).toBe(tooWide)
   })
 
-  it('strips a full business signature, not just a personal two-liner', () => {
-    // Name, title, company, two address lines, email, phone — seven lines is
-    // what a real corporate signature needs, and the cap is set from that
-    // rather than guessed.
+  it('strips a personal signature of up to five lines', () => {
+    const body =
+      'Post body.\n\nJane Smith\nSoftware Engineer\nSan Francisco\nsomeone@example.com\nwww.example.com'
+    expect(stripSignature(body)).toBe('Post body.')
+  })
+
+  it('leaves a long corporate signature, which is the documented trade', () => {
+    // Seven lines: name, title, company, two address lines, email, phone.
+    // Fitting it would cost false positives on real writing, and the people
+    // posting here send from personal accounts. The `-- ` delimiter is the
+    // answer for anyone whose signature is longer.
     const body =
       'Post body.\n\nJane Smith\nEVP, Global Partnerships\nExample Corporation\n1234 Long Street, Floor 12\nNew York, NY 10001\nsomeone@example.com\n+1 555 123 4567'
-    expect(stripSignature(body)).toBe('Post body.')
+    expect(stripSignature(body)).toBe(body)
   })
 
   it('requires the contact line near the end, so prose with a link survives', () => {

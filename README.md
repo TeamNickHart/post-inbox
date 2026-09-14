@@ -341,14 +341,56 @@ into a bounce. What it says depends on *why*:
 
 ### Email signatures
 
-A signature delimited by the standard `-- ` line is stripped from the body.
-Only that delimiter is recognised — nothing tries to guess at signatures by
-shape, because a wrong guess eats part of your post. If yours does not
-conform, set `STRIP_SIGNATURE=false` and trim it yourself:
+**Put `-- ` on a line of its own above your signature.** That is the standard
+delimiter (RFC 3676), it is matched exactly, and everything below it is removed
+with no guessing involved. It is the reliable option, and worth setting up once
+in your mail client.
+
+Two hyphens and a space. A bare `--` also works, since relays trim trailing
+whitespace. Three or more hyphens is a markdown horizontal rule and is left
+alone.
+
+#### When there is no delimiter
+
+Some clients — iOS Gmail among them — append a signature as plain trailing
+lines with no delimiter at all. Since a post becomes a pull request on a repo
+that may be public, leaving an email address in it is a privacy problem, so a
+narrow fallback removes a trailing block that is unmistakably contact details.
+
+It only fires when **all** of these hold:
+
+- the block is last, after a blank line, with content above it
+- at most **5 lines**, none longer than **60 characters** (per line, not total)
+- no markdown in it — a heading, list, quote, code fence or image means it is
+  part of your post
+- it is not directly under a heading, so a `## Links` section survives
+- **one of the last two lines is nothing but an email address or a URL**
+
+That last condition is what does the work. A signature ends with contact
+details, where prose mentions a link mid-thought and carries on — so a closing
+paragraph, a list of links, or a recipe with a URL in it are all left alone.
+
+**What this deliberately will not strip:** a signature of only a name (it reads
+exactly like a closing line), a long corporate block of more than 5 lines, or
+anything with markdown in it. Use `-- ` for those.
+
+#### Turning it off
+
+To keep every signature and trim them yourself:
 
 ```bash
-npx wrangler secret put STRIP_SIGNATURE   # or set it in wrangler.jsonc vars
+npx wrangler secret put STRIP_SIGNATURE   # set to "false"
 ```
+
+That disables both the delimiter rule and the fallback. To change the
+thresholds instead, they are named constants at the top of
+[`src/core/signature.ts`](src/core/signature.ts) — `MAX_BLOCK_LINES`,
+`MAX_LINE_LENGTH` and `CONTACT_WITHIN_LAST` — each with the reasoning for its
+value, and the tests in `test/signature.test.ts` cover both what must be
+stripped and what must survive.
+
+If the fallback ever eats part of a post, that is a bug worth reporting: add
+the case to those tests.
 
 ## Roadmap
 
