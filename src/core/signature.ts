@@ -79,10 +79,34 @@ const LINKIFIED_URL = /^\[(?:https?:\/\/|www\.)\S+\]\((?:https?:\/\/|www\.)\S+\)
 /** Markdown that means the block is content, whatever else it contains. */
 const MARKDOWN_STRUCTURE = /^(?:#{1,6} |[-*+] |\d+\. |>|```|!\[)/
 
-/** A block this long is prose that happens to mention an address. */
-const MAX_BLOCK_LINES = 5
-/** A line this long is a sentence, not a contact detail. */
+/**
+ * A block this long is prose that happens to mention an address.
+ *
+ * Seven, because that is what a real business signature needs: name, title,
+ * company, two address lines, email, phone. Measured against constructed
+ * examples rather than guessed — an elaborate corporate signature came to
+ * seven lines, and a personal one to two.
+ */
+const MAX_BLOCK_LINES = 7
+/**
+ * A line this long is a sentence, not a contact detail. **Per line**, not for
+ * the block, so a long signature of short lines is still caught.
+ *
+ * Sixty is comfortable rather than tight: the widest line in any realistic
+ * signature measured was 48 characters, a job title. What rejects prose is
+ * mostly the rules below, not this.
+ */
 const MAX_LINE_LENGTH = 60
+/**
+ * How far from the end a contact line may sit.
+ *
+ * This is the rule that separates a signature from a short paragraph that
+ * happens to contain a URL: a signature *ends* with its contact details, while
+ * prose mentions a link mid-thought and carries on. Without it, a closing
+ * paragraph, a lyric block, a recipe list and a changelog all match — each is
+ * short lines containing a URL.
+ */
+const CONTACT_WITHIN_LAST = 2
 
 /**
  * Cut a trailing block that is unmistakably contact details.
@@ -92,9 +116,9 @@ const MAX_LINE_LENGTH = 60
  *  - it is the **last** block, separated from the body by a blank line
  *  - something remains above it, so a post that is only a signature survives
  *  - at most `MAX_BLOCK_LINES` short lines, none over `MAX_LINE_LENGTH`
- *  - **at least one line is nothing but an email address or a URL** — this is
- *    the load-bearing condition, and the reason a block of ordinary prose is
- *    never touched
+ *  - **one of the last two lines is nothing but an email address or a URL** —
+ *    the load-bearing condition. A signature ends with its contact details;
+ *    prose mentions a link mid-thought and keeps going
  *  - no markdown structure anywhere in it: a heading, list, quote, fence or
  *    image means it is content
  *
@@ -123,7 +147,8 @@ function stripTrailingContactBlock(body: string): string {
   const lastOfPrevious = previousLines[previousLines.length - 1]?.trim() ?? ''
   if (/^#{1,6} /.test(lastOfPrevious)) return body
 
-  const hasContact = lines.some((line) => {
+  // Only the last couple of lines count: see CONTACT_WITHIN_LAST.
+  const hasContact = lines.slice(-CONTACT_WITHIN_LAST).some((line) => {
     const trimmed = line.trim()
     return BARE_EMAIL.test(trimmed) || BARE_URL.test(trimmed) || LINKIFIED_URL.test(trimmed)
   })

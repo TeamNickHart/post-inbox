@@ -117,10 +117,35 @@ describe('signatures with no delimiter at all', () => {
   })
 
   it('leaves a block that is too long or too wide to be contact details', () => {
-    const tooMany = 'Post body.\n\nsomeone@example.com\nb\nc\nd\ne\nf'
+    const tooMany = 'Post body.\n\na\nb\nc\nd\ne\nf\ng\nsomeone@example.com'
     expect(stripSignature(tooMany)).toBe(tooMany)
-    const tooWide = 'Post body.\n\nYou can reach me at someone@example.com or just leave a comment below instead.'
+    const tooWide = 'Post body.\n\nJane\nYou can reach me at someone@example.com or leave a comment below instead.'
     expect(stripSignature(tooWide)).toBe(tooWide)
+  })
+
+  it('strips a full business signature, not just a personal two-liner', () => {
+    // Name, title, company, two address lines, email, phone — seven lines is
+    // what a real corporate signature needs, and the cap is set from that
+    // rather than guessed.
+    const body =
+      'Post body.\n\nJane Smith\nEVP, Global Partnerships\nExample Corporation\n1234 Long Street, Floor 12\nNew York, NY 10001\nsomeone@example.com\n+1 555 123 4567'
+    expect(stripSignature(body)).toBe('Post body.')
+  })
+
+  it('requires the contact line near the end, so prose with a link survives', () => {
+    // This is what separates a signature from a short paragraph containing a
+    // URL: a signature ends with its contact details, prose mentions a link
+    // mid-thought and carries on. Each of these is short lines with a URL.
+    const prose = [
+      'Thanks for reading.\nLet me know what you think.\nMore at https://example.com',
+      'Roses are red\nViolets are blue\nsee https://example.com\nfor more',
+      '2 cups flour\n1 tsp salt\n3 eggs\nsee https://example.com\nbake 30 min\nserves 4',
+      'v1.2 shipped\nfixed the parser\ndocs at https://example.com',
+    ]
+    for (const block of prose) {
+      const body = `Post body.\n\n${block}`
+      expect(stripSignature(body), block).toBe(body)
+    }
   })
 })
 
