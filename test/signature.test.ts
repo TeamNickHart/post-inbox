@@ -60,3 +60,115 @@ describe('stripSignature', () => {
     expect(stripSignature(body)).toBe(body)
   })
 })
+
+describe('signatures with no delimiter at all', () => {
+  // iOS Gmail appends a signature as bare trailing lines with no `-- `, which
+  // put a real name, address and URL into a post on a public repo. Catching it
+  // needs a heuristic, so every rule below errs towards leaving text alone.
+
+  it('strips the trailing contact block a real iOS Gmail message produced', () => {
+    const body = '# heading\n\nSome real post content.\n\nNick Hart\nsomeone@example.com\n[http://example.com](http://example.com)'
+    const out = stripSignature(body)
+    expect(out).toBe('# heading\n\nSome real post content.')
+    expect(out).not.toContain('@example.com')
+  })
+
+  it('strips a name and address, or either alone', () => {
+    for (const block of ['Jenny Weis\nsomeone@example.com', 'someone@example.com', 'https://example.com', 'Nick\nwww.example.com']) {
+      expect(stripSignature(`Post body.\n\n${block}`), block).toBe('Post body.')
+    }
+  })
+
+  it('requires an address or URL, so a plain sign-off is left alone', () => {
+    // A closing line with no contact details reads exactly like prose, so
+    // guessing at it would eat real writing.
+    const body = 'Post body.\n\nThanks,\nNick'
+    expect(stripSignature(body)).toBe(body)
+  })
+
+  it('leaves prose that merely mentions an address', () => {
+    const body = 'Post body.\n\nEmail me at someone@example.com if you want to talk about any of this.'
+    expect(stripSignature(body)).toBe(body)
+  })
+
+  it('leaves a block carrying markdown structure', () => {
+    for (const block of ['- see https://example.com\n- and more', '![alt](/static/images/a.jpg)', '> https://example.com', '```\nhttps://example.com\n```']) {
+      expect(stripSignature(`Post body.\n\n${block}`), block).toBe(`Post body.\n\n${block}`)
+    }
+  })
+
+  it('leaves a block introduced by a heading, which makes it content', () => {
+    // A `## Links` section of bare URLs is a post, not a signature — and the
+    // heading sits in the *previous* block, so it has to be looked for there.
+    const body = 'Post body.\n\n## Links\n\nhttps://example.com'
+    expect(stripSignature(body)).toBe(body)
+  })
+
+  it('still strips when a heading appears earlier in the post', () => {
+    expect(stripSignature('## Section\n\nContent.\n\nNick\nsomeone@example.com')).toBe(
+      '## Section\n\nContent.',
+    )
+  })
+
+  it('leaves a body that is only a contact block', () => {
+    // Nothing would remain, and an empty post is worse than a signature.
+    const body = 'Nick Hart\nsomeone@example.com'
+    expect(stripSignature(body)).toBe(body)
+  })
+
+  it('leaves a block that is too long or too wide to be contact details', () => {
+    const tooMany = 'Post body.\n\na\nb\nc\nd\ne\nf\ng\nsomeone@example.com'
+    expect(stripSignature(tooMany)).toBe(tooMany)
+    const tooWide = 'Post body.\n\nJane\nYou can reach me at someone@example.com or leave a comment below instead.'
+    expect(stripSignature(tooWide)).toBe(tooWide)
+  })
+
+  it('strips a personal signature of up to five lines', () => {
+    const body =
+      'Post body.\n\nJane Smith\nSoftware Engineer\nSan Francisco\nsomeone@example.com\nwww.example.com'
+    expect(stripSignature(body)).toBe('Post body.')
+  })
+
+  it('leaves a long corporate signature, which is the documented trade', () => {
+    // Seven lines: name, title, company, two address lines, email, phone.
+    // Fitting it would cost false positives on real writing, and the people
+    // posting here send from personal accounts. The `-- ` delimiter is the
+    // answer for anyone whose signature is longer.
+    const body =
+      'Post body.\n\nJane Smith\nEVP, Global Partnerships\nExample Corporation\n1234 Long Street, Floor 12\nNew York, NY 10001\nsomeone@example.com\n+1 555 123 4567'
+    expect(stripSignature(body)).toBe(body)
+  })
+
+  it('requires the contact line near the end, so prose with a link survives', () => {
+    // This is what separates a signature from a short paragraph containing a
+    // URL: a signature ends with its contact details, prose mentions a link
+    // mid-thought and carries on. Each of these is short lines with a URL.
+    const prose = [
+      'Thanks for reading.\nLet me know what you think.\nMore at https://example.com',
+      'Roses are red\nViolets are blue\nsee https://example.com\nfor more',
+      '2 cups flour\n1 tsp salt\n3 eggs\nsee https://example.com\nbake 30 min\nserves 4',
+      'v1.2 shipped\nfixed the parser\ndocs at https://example.com',
+    ]
+    for (const block of prose) {
+      const body = `Post body.\n\n${block}`
+      expect(stripSignature(body), block).toBe(body)
+    }
+  })
+})
+
+describe('delimiter variants clients actually send', () => {
+  it('accepts an indented delimiter', () => {
+    expect(stripSignature('Post body.\n\n  -- \nNick')).toBe('Post body.')
+  })
+
+  it('accepts a non-breaking space after the hyphens', () => {
+    // Some clients substitute one for the RFC's plain space.
+    expect(stripSignature('Post body.\n\n--\u00a0\nNick')).toBe('Post body.')
+    expect(stripSignature('Post body.\n\n--\u202f\nNick')).toBe('Post body.')
+  })
+
+  it('still leaves a markdown horizontal rule alone', () => {
+    const body = 'Post body.\n\n---\n\nMore body.'
+    expect(stripSignature(body)).toBe(body)
+  })
+})
