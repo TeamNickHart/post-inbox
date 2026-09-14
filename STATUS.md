@@ -507,6 +507,44 @@ per-installation.
 
 ## Backlog
 
+- **An on-demand image conversion Action, shared and exposed to the sites.**
+  An idea rather than a plan. A `workflow_dispatch` workflow in
+  `TeamNickHart/.github`, run by hand against an open pull request or a whole
+  `public/static/images` directory, taking parameters — maximum edge, quality,
+  target format — and committing the results back. Shared, so all three sites
+  get it, and potentially callable from a site rather than only from the Actions
+  tab.
+
+  **Deliberately not built yet, because the case for it is currently weak:**
+
+  - `next/image` already resizes and serves modern formats from whatever source
+    file a post points at, so a conversion pass mostly re-encodes files Vercel
+    is about to re-encode anyway.
+  - HEIC, the one format that genuinely needed converting, is now handled at
+    ingest.
+  - Metadata is stripped at upload, on purpose, so GPS never reaches the repo
+    even if a later step is skipped or fails.
+  - Measured rather than assumed: the three sites hold 23 images totalling
+    7.1MB, five over 500KB and none over 1MB. There is no size problem to solve.
+  - Committing back from an Action needs `contents: write`, `ref:
+    github.head_ref` for the pull request head, and runs into
+    `GITHUB_TOKEN`-authored commits not re-triggering workflows — which would
+    leave the required `ci` or `mdx` check stale. All three are why conversion
+    landed in the Worker instead.
+
+  **What would change the calculus:** repo size actually growing. A converted
+  HEIC currently commits at full resolution — the first real one was 1.6MB for
+  24 megapixels — so a handful of photo posts per month would make this worth
+  revisiting. At that point the cheap lever is one line in the converter rather
+  than a whole workflow: `transform({ width: 2400 })` in
+  `src/adapters/cloudflare/imageConverter.ts` would cut committed size
+  substantially at no visible cost, since `next/image` downscales for delivery
+  regardless. Try that before building an Action.
+
+  The genuinely distinct capability an Action would add is **reprocessing images
+  already in the repo**, which the ingest path cannot reach — useful for a
+  one-off cleanup, or if a future decision changes what the sites want committed.
+
 - **HTML-only mail is rejected, which breaks the most natural way to post a
   photo from a phone.** The iOS Photos share sheet composes HTML with no
   plaintext part, so `emailToPost` rejects it with "no plaintext body" — the
