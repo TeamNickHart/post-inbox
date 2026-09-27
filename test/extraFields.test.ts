@@ -4,59 +4,59 @@ import { parseHeaders } from '../src/core/headers.ts'
 import { renderPost } from '../src/core/markdown.ts'
 import { validateSites } from '../src/core/sites.ts'
 
-const pillar = {
+const section = {
   type: 'enum' as const,
-  values: { build: ['building'], leadership: ['leading'], fun: [] },
+  values: { howto: ['how-to', 'tutorial'], opinion: ['editorial'], notes: [] },
 }
-const definitions = { pillar, project: { type: 'string' as const } }
+const definitions = { section, series: { type: 'string' as const } }
 
 describe('resolveExtraFields', () => {
   it('accepts the stored value, whatever the capitalisation', () => {
-    for (const spelling of ['build', 'Build', 'BUILD']) {
-      const result = resolveExtraFields({ pillar: spelling }, definitions)
-      expect(result.ok && result.values.pillar, spelling).toBe('build')
+    for (const spelling of ['howto', 'HowTo', 'HOWTO']) {
+      const result = resolveExtraFields({ section: spelling }, definitions)
+      expect(result.ok && result.values.section, spelling).toBe('howto')
     }
   })
 
   it('accepts a label a reader would type, and stores the schema value', () => {
-    // The site shows "Leading" on the badge but stores `leadership`, so someone
+    // A site may head the page "Tutorial" while storing `howto`, so someone
     // writing an email reasonably types the label.
-    expect(resolveExtraFields({ pillar: 'Leading' }, definitions)).toEqual({
+    expect(resolveExtraFields({ section: 'Tutorial' }, definitions)).toEqual({
       ok: true,
-      values: { pillar: 'leadership' },
+      values: { section: 'howto' },
     })
   })
 
   it('keeps a string field exactly as written', () => {
-    expect(resolveExtraFields({ project: 'smart-hvac-guardian' }, definitions)).toEqual({
+    expect(resolveExtraFields({ series: 'shipping-a-thing' }, definitions)).toEqual({
       ok: true,
-      values: { project: 'smart-hvac-guardian' },
+      values: { series: 'shipping-a-thing' },
     })
   })
 
   it('rejects an unknown value and names what is accepted', () => {
-    const result = resolveExtraFields({ pillar: 'Leeding' }, definitions)
+    const result = resolveExtraFields({ section: 'Tootorial' }, definitions)
     expect(result.ok).toBe(false)
     if (result.ok) return
-    expect(result.errors[0]!.message).toContain('Leeding')
-    expect(result.errors[0]!.message).toContain('leadership (or leading)')
+    expect(result.errors[0]!.message).toContain('Tootorial')
+    expect(result.errors[0]!.message).toContain('opinion (or editorial)')
     // A value with no aliases is listed plainly rather than as "fun (or )".
-    expect(result.errors[0]!.message).toContain('fun')
-    expect(result.errors[0]!.message).not.toContain('fun (or )')
+    expect(result.errors[0]!.message).toContain('notes')
+    expect(result.errors[0]!.message).not.toContain('notes (or )')
   })
 
   it('reports every bad field, not just the first', () => {
     // Otherwise a sender fixes one and discovers the next on the next attempt.
-    const two = { pillar: { ...pillar }, mood: { type: 'enum' as const, values: { calm: [] } } }
-    const result = resolveExtraFields({ pillar: 'nope', mood: 'also-nope' }, two)
+    const two = { section: { ...section }, mood: { type: 'enum' as const, values: { calm: [] } } }
+    const result = resolveExtraFields({ section: 'nope', mood: 'also-nope' }, two)
     expect(result.ok).toBe(false)
     if (result.ok) return
-    expect(result.errors.map((item) => item.field).sort()).toEqual(['mood', 'pillar'])
+    expect(result.errors.map((item) => item.field).sort()).toEqual(['mood', 'section'])
   })
 
   it('treats an empty value as unset rather than invalid', () => {
-    // `Pillar:` with nothing after it is a sender trailing off, not an error.
-    expect(resolveExtraFields({ pillar: '   ' }, definitions)).toEqual({ ok: true, values: {} })
+    // `Section:` with nothing after it is a sender trailing off, not an error.
+    expect(resolveExtraFields({ section: '   ' }, definitions)).toEqual({ ok: true, values: {} })
   })
 
   it('ignores a field the site did not declare', () => {
@@ -64,24 +64,24 @@ describe('resolveExtraFields', () => {
   })
 
   it('accepts nothing when a site declares nothing', () => {
-    expect(resolveExtraFields({ pillar: 'build' }, undefined)).toEqual({ ok: true, values: {} })
+    expect(resolveExtraFields({ section: 'build' }, undefined)).toEqual({ ok: true, values: {} })
   })
 
   it('knows which names every post already has', () => {
     for (const name of ['title', 'date', 'tags', 'draft', 'summary', 'authors', 'Title']) {
       expect(isReservedFieldName(name), name).toBe(true)
     }
-    expect(isReservedFieldName('pillar')).toBe(false)
+    expect(isReservedFieldName('section')).toBe(false)
   })
 })
 
 describe('the header block with declared fields', () => {
-  const body = 'Tags: Coding\nSummary: A summary.\nPillar: Leading\nProject: md2do\n\nThe post body.'
+  const body = 'Tags: Coding\nSummary: A summary.\nSection: Tutorial\nSeries: building-a-cli\n\nThe post body.'
 
   it('reads declared fields, under the name the site declared', () => {
-    // The sender wrote `Pillar:`; the site declared `pillar`.
-    const parsed = parseHeaders(body, ['pillar', 'project'])
-    expect(parsed.extra).toEqual({ pillar: 'Leading', project: 'md2do' })
+    // The sender wrote `Section:`; the site declared `section`.
+    const parsed = parseHeaders(body, ['section', 'series'])
+    expect(parsed.extra).toEqual({ section: 'Tutorial', series: 'building-a-cli' })
     expect(parsed.body).toBe('The post body.')
     expect(parsed.tags).toEqual(['Coding'])
   })
@@ -90,14 +90,14 @@ describe('the header block with declared fields', () => {
     // This is what the other two sites see, and must not change.
     const parsed = parseHeaders(body)
     expect(parsed.extra).toBeUndefined()
-    expect(parsed.body).toBe('Pillar: Leading\nProject: md2do\n\nThe post body.')
+    expect(parsed.body).toBe('Section: Tutorial\nSeries: building-a-cli\n\nThe post body.')
     expect(parsed.summary).toBe('A summary.')
   })
 
   it('still ends the block at the first unrecognised key', () => {
-    const parsed = parseHeaders('Tags: A\nNonsense: x\nPillar: fun\n\nBody.', ['pillar'])
+    const parsed = parseHeaders('Tags: A\nNonsense: x\nSection: notes\n\nBody.', ['section'])
     expect(parsed.extra).toBeUndefined()
-    expect(parsed.body).toBe('Nonsense: x\nPillar: fun\n\nBody.')
+    expect(parsed.body).toBe('Nonsense: x\nSection: notes\n\nBody.')
   })
 })
 
@@ -113,11 +113,11 @@ describe('rendering declared frontmatter', () => {
     const out = renderPost({
       ...base,
       tags: ['Coding'],
-      extraFrontmatter: { layout: 'PostBanner', pillar: 'leadership' },
+      extraFrontmatter: { layout: 'WideLayout', section: 'howto' },
     })
-    expect(out).toContain("layout: 'PostBanner'")
-    expect(out).toContain("pillar: 'leadership'")
-    expect(out.indexOf('draft:')).toBeLessThan(out.indexOf('pillar:'))
+    expect(out).toContain("layout: 'WideLayout'")
+    expect(out).toContain("section: 'howto'")
+    expect(out.indexOf('draft:')).toBeLessThan(out.indexOf('section:'))
   })
 
   it('emits nothing extra when a site declares nothing', () => {
@@ -148,7 +148,7 @@ describe('validating a site declaration', () => {
     validateSites({ sites: [{ ...site, ...extra }] } as never)
 
   it('accepts a well-formed declaration', () => {
-    expect(check({ extraFields: definitions, frontmatter: { layout: 'PostBanner' }, summaryMinLength: 100 })).not.toThrow()
+    expect(check({ extraFields: definitions, frontmatter: { layout: 'WideLayout' }, summaryMinLength: 100 })).not.toThrow()
   })
 
   it('refuses to redeclare a field every post already has', () => {
@@ -161,8 +161,8 @@ describe('validating a site declaration', () => {
   it('refuses an alias that maps to two different values', () => {
     // Which one wins would depend on key order.
     expect(
-      check({ extraFields: { p: { type: 'enum', values: { build: ['x'], fun: ['X'] } } } }),
-    ).toThrow(/both build and fun/)
+      check({ extraFields: { p: { type: 'enum', values: { howto: ['x'], notes: ['X'] } } } }),
+    ).toThrow(/both howto and notes/)
   })
 
   it('refuses an enum that accepts nothing, and an unknown type', () => {

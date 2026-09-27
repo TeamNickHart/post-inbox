@@ -1,15 +1,16 @@
 /**
  * Per-site frontmatter fields, declared in `sites.jsonc`.
  *
- * Sites built on the same template still diverge: one has a `pillar` enum and
- * links posts to a project, another has neither. Hard-coding either would put
- * one site's schema in code that three sites share, so a site declares what it
- * accepts and everything here stays generic.
+ * Sites built on the same template still diverge: one may categorise posts and
+ * group them into a series, another neither. Hard-coding any of it would put
+ * one site's schema into code that every site shares, so a site declares what
+ * it accepts and everything here stays generic — no field name or value in this
+ * module, only the shape of a declaration.
  *
  * A declared field is readable from the same header block as `Tags:` and
- * `Summary:` (`Pillar: Leading`) and from the HTTPS body. **The declaration is
- * the only way a header line becomes frontmatter** — an undeclared key is left
- * alone as prose, exactly as before this existed.
+ * `Summary:` (`Section: Tutorial`) and from the HTTPS body. **The declaration
+ * is the only way a header line becomes frontmatter** — an undeclared key is
+ * left alone as prose, exactly as before this existed.
  */
 
 /**
@@ -23,8 +24,8 @@
  *
  * This is why the shape is a map rather than the flat list of stored values it
  * might obviously have been: a site's labels often differ from its stored
- * values — `leadership` shows as "Leading" — and someone writing an email
- * reasonably types what they read on the site.
+ * values — a stored `opinion` heading a page titled "Editorial" — and someone
+ * writing an email reasonably types what they read on the site.
  */
 export interface EnumFieldDefinition {
   type: 'enum'
@@ -91,7 +92,7 @@ export function resolveExtraFields(
     if (!definition) continue
 
     const value = raw.trim()
-    // An empty value is the sender writing `Pillar:` and nothing else. Treat it
+    // An empty value is the sender writing `Section:` and nothing else. Treat it
     // as not setting the field rather than as an error, matching how an empty
     // `Summary:` is already ignored.
     if (!value) continue

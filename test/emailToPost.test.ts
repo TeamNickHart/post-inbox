@@ -394,63 +394,63 @@ describe('emailToPost — attachments', () => {
 })
 
 describe('emailToPost — site-declared frontmatter', () => {
-  const pillar = {
+  const section = {
     type: 'enum' as const,
-    values: { build: ['building'], leadership: ['leading'], fun: [] },
+    values: { howto: ['how-to', 'tutorial'], opinion: ['editorial'], notes: [] },
   }
   const siteOptions = {
     policy,
-    extraFields: { pillar, project: { type: 'string' as const } },
-    frontmatter: { layout: 'PostBanner' },
+    extraFields: { section, series: { type: 'string' as const } },
+    frontmatter: { layout: 'WideLayout' },
   }
 
   it('reads a declared field from the header block and stores the schema value', async () => {
     const result = await emailToPost(
-      genuine({ text: 'Pillar: Leading\nProject: md2do\n\nThe body.' }),
+      genuine({ text: 'Section: Tutorial\nSeries: building-a-cli\n\nThe body.' }),
       siteOptions,
     )
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.request.extraFrontmatter).toEqual({
-      layout: 'PostBanner',
-      pillar: 'leadership',
-      project: 'md2do',
+      layout: 'WideLayout',
+      section: 'howto',
+      series: 'building-a-cli',
     })
     expect(result.request.body).toBe('The body.')
   })
 
   it('adds the site default even when the sender writes no header block', async () => {
     const result = await emailToPost(genuine({ text: 'Just a body.' }), siteOptions)
-    expect(result.ok && result.request.extraFrontmatter).toEqual({ layout: 'PostBanner' })
+    expect(result.ok && result.request.extraFrontmatter).toEqual({ layout: 'WideLayout' })
   })
 
   it('lets a header value override the site default', async () => {
     const result = await emailToPost(
-      genuine({ text: 'Layout: PostSimple\n\nThe body.' }),
+      genuine({ text: 'Layout: NarrowLayout\n\nThe body.' }),
       { ...siteOptions, extraFields: { ...siteOptions.extraFields, layout: { type: 'string' as const } } },
     )
-    expect(result.ok && result.request.extraFrontmatter?.layout).toBe('PostSimple')
+    expect(result.ok && result.request.extraFrontmatter?.layout).toBe('NarrowLayout')
   })
 
   it('bounces an invalid value instead of writing frontmatter that breaks the build', async () => {
     const result = await emailToPost(
-      genuine({ text: 'Pillar: Leeding\n\nThe body.' }),
+      genuine({ text: 'Section: Tootorial\n\nThe body.' }),
       siteOptions,
     )
     expect(result.ok).toBe(false)
     if (result.ok) return
     // A content failure, so an authenticated sender is told what to fix.
     expect(result.kind).toBe('content')
-    expect(result.senderMessage).toContain('leadership (or leading)')
+    expect(result.senderMessage).toContain('opinion (or editorial)')
   })
 
   it('leaves a declared-looking line as prose for a site that declares nothing', async () => {
     // What the sites without these fields must keep doing.
-    const result = await emailToPost(genuine({ text: 'Pillar: Leading\n\nThe body.' }), options)
+    const result = await emailToPost(genuine({ text: 'Section: Tutorial\n\nThe body.' }), options)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.request.extraFrontmatter).toBeUndefined()
-    expect(result.request.body).toBe('Pillar: Leading\n\nThe body.')
+    expect(result.request.body).toBe('Section: Tutorial\n\nThe body.')
   })
 
   it('notes a thin summary without rejecting the post', async () => {

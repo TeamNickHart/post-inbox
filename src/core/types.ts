@@ -106,7 +106,7 @@ export interface SiteConfig {
   }
   /**
    * Extra frontmatter fields this site's schema accepts, beyond the ones every
-   * post has. Readable from the email header block (`Pillar: Leading`) and
+   * post has. Readable from the email header block (`Section: Tutorial`) and
    * from the HTTPS body.
    *
    * Declaring a field is the only way a header line becomes frontmatter: an
@@ -116,7 +116,7 @@ export interface SiteConfig {
   extraFields?: ExtraFieldDefinitions
   /**
    * Fixed frontmatter added to every post for this site, e.g.
-   * `{ "layout": "PostBanner" }`.
+   * `{ "layout": "WideLayout" }`.
    *
    * A value from the header block for the same key wins, so a default is a
    * starting point rather than a constraint.

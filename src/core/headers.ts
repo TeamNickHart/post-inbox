@@ -82,7 +82,7 @@ export function parseHeaders(body: string, extraKeys: string[] = []): ParsedHead
   if (summary) result.summary = summary
 
   // Declared fields are returned under the name the site declared, not the
-  // sender's capitalisation, so `Pillar:` and `pillar:` reach the same field.
+  // sender's capitalisation, so `Section:` and `section:` reach the same field.
   const extra: Record<string, string> = {}
   for (const [lowercase, declared] of extraByLowercase) {
     const value = found.get(lowercase)
