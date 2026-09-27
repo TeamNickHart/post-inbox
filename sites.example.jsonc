@@ -60,6 +60,50 @@
       // a file that exists: frontmatter naming a missing author breaks the
       // site build. Run `pnpm check:authors` after editing this.
       //
+      // Optional: extra frontmatter fields this site's schema accepts, beyond
+      // the title/date/tags/draft/summary/authors every post has. A sender
+      // sets one from the email header block (`Pillar: Leading`, keys
+      // case-insensitive) or as a top-level key in the HTTPS body.
+      //
+      // Declaring a field is the only way a header line becomes frontmatter.
+      // Omit this and `Pillar: Leading` at the top of an email stays part of
+      // the post body, exactly as it did before this existed.
+      //
+      // "enum" takes a map of the value that reaches the frontmatter to the
+      // other spellings a sender may type for it. A stored value always
+      // accepts itself, so listing `[]` means "this value, however
+      // capitalised". Aliases exist because a site's labels often differ from
+      // what it stores — a badge reading "Leading" for a stored `leadership` —
+      // and someone writing an email types what they read.
+      //
+      // An unrecognised value is refused in the bounce, naming what is
+      // accepted, rather than written as frontmatter that breaks the build.
+      //
+      // "string" is stored as written. Use it where the value is open-ended,
+      // or where the site itself warns about unknown values at build time.
+      // "extraFields": {
+      //   "pillar": {
+      //     "type": "enum",
+      //     "values": {
+      //       "build": ["building"],
+      //       "leadership": ["leading"],
+      //       "fun": []
+      //     }
+      //   },
+      //   "project": { "type": "string" }
+      // },
+
+      // Optional: frontmatter added to every post for this site. A header-block
+      // value for the same key overrides it, so this is a starting point rather
+      // than a constraint. Useful where every post uses one layout.
+      // "frontmatter": { "layout": "PostBanner" },
+
+      // Optional: note in the pull request when the summary is missing or
+      // shorter than this. Advisory only — never a rejection. A summary is what
+      // link previews and search results show; LinkedIn's Post Inspector warns
+      // under 100 characters.
+      // "summaryMinLength": 100,
+
       "authorsBySender": {
         "you@example.com": "default",
         "someone-else@example.com": "someone-else"
