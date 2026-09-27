@@ -392,3 +392,88 @@ describe('emailToPost — attachments', () => {
     expect(result.request.body).not.toContain('Sent with')
   })
 })
+
+describe('emailToPost — site-declared frontmatter', () => {
+  const section = {
+    type: 'enum' as const,
+    values: { howto: ['how-to', 'tutorial'], opinion: ['editorial'], notes: [] },
+  }
+  const siteOptions = {
+    policy,
+    extraFields: { section, series: { type: 'string' as const } },
+    frontmatter: { layout: 'WideLayout' },
+  }
+
+  it('reads a declared field from the header block and stores the schema value', async () => {
+    const result = await emailToPost(
+      genuine({ text: 'Section: Tutorial\nSeries: building-a-cli\n\nThe body.' }),
+      siteOptions,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.request.extraFrontmatter).toEqual({
+      layout: 'WideLayout',
+      section: 'howto',
+      series: 'building-a-cli',
+    })
+    expect(result.request.body).toBe('The body.')
+  })
+
+  it('adds the site default even when the sender writes no header block', async () => {
+    const result = await emailToPost(genuine({ text: 'Just a body.' }), siteOptions)
+    expect(result.ok && result.request.extraFrontmatter).toEqual({ layout: 'WideLayout' })
+  })
+
+  it('lets a header value override the site default', async () => {
+    const result = await emailToPost(
+      genuine({ text: 'Layout: NarrowLayout\n\nThe body.' }),
+      { ...siteOptions, extraFields: { ...siteOptions.extraFields, layout: { type: 'string' as const } } },
+    )
+    expect(result.ok && result.request.extraFrontmatter?.layout).toBe('NarrowLayout')
+  })
+
+  it('bounces an invalid value instead of writing frontmatter that breaks the build', async () => {
+    const result = await emailToPost(
+      genuine({ text: 'Section: Tootorial\n\nThe body.' }),
+      siteOptions,
+    )
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    // A content failure, so an authenticated sender is told what to fix.
+    expect(result.kind).toBe('content')
+    expect(result.senderMessage).toContain('opinion (or editorial)')
+  })
+
+  it('leaves a declared-looking line as prose for a site that declares nothing', async () => {
+    // What the sites without these fields must keep doing.
+    const result = await emailToPost(genuine({ text: 'Section: Tutorial\n\nThe body.' }), options)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.request.extraFrontmatter).toBeUndefined()
+    expect(result.request.body).toBe('Section: Tutorial\n\nThe body.')
+  })
+
+  it('notes a thin summary without rejecting the post', async () => {
+    const withMinimum = { ...siteOptions, summaryMinLength: 100 }
+    const short = await emailToPost(
+      genuine({ text: 'Summary: Too short.\n\nThe body.' }),
+      withMinimum,
+    )
+    expect(short.ok).toBe(true)
+    expect(short.ok && short.request.summaryHint).toContain('10 characters')
+
+    const missing = await emailToPost(genuine({ text: 'The body.' }), withMinimum)
+    expect(missing.ok && missing.request.summaryHint).toContain('No summary')
+
+    const long = await emailToPost(
+      genuine({ text: `Summary: ${'x'.repeat(120)}\n\nThe body.` }),
+      withMinimum,
+    )
+    expect(long.ok && long.request.summaryHint).toBeUndefined()
+  })
+
+  it('says nothing about the summary when the site sets no minimum', async () => {
+    const result = await emailToPost(genuine({ text: 'Summary: Short.\n\nBody.' }), siteOptions)
+    expect(result.ok && result.request.summaryHint).toBeUndefined()
+  })
+})

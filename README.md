@@ -223,13 +223,78 @@ Summary: What I learned shipping this.
 The post body starts here.
 ```
 
-Only `Tags` and `Summary` are recognised, and only as a contiguous block at the
-start — the first line that is not one of them ends the block, so prose
-containing a colon is never mistaken for metadata. An unrecognised key is left
-in the body rather than silently dropped.
+`Tags` and `Summary` are recognised everywhere, plus any extra fields the site
+declares (below). Only a contiguous block at the start counts — the first line
+that is not a recognised key ends the block, so prose containing a colon is
+never mistaken for metadata. An unrecognised key is left in the body rather
+than silently dropped.
 
 Tags split on commas only, so a tag may contain spaces (`job application`), and
 case is preserved (`IKEA`, `SwiftLint`) to match the tags a site already uses.
+
+#### Site-specific fields
+
+Sites built on the same template still differ: one may categorise posts and
+group them into a series, another neither. A site declares what its schema
+accepts in `sites.jsonc`, and those names then work in the header block.
+
+The field names below are an illustration — use whatever your site's schema
+declares:
+
+```jsonc
+"extraFields": {
+  "section": {
+    "type": "enum",
+    "values": {
+      "howto": ["how-to", "tutorial"],
+      "opinion": ["editorial"],
+      "notes": []
+    }
+  },
+  "series": { "type": "string" }
+}
+```
+
+```
+Tags: Coding
+Summary: What I learned shipping this.
+Section: Tutorial
+Series: Building a CLI
+
+The post body starts here.
+```
+
+That stores `section: 'howto'` and `series: 'Building a CLI'`.
+
+An **enum** maps the value that reaches the frontmatter to the other spellings a
+sender may type. A stored value always accepts itself, and matching ignores
+case, so `howto`, `How-To` and `Tutorial` all store `howto`. Aliases exist
+because a site's labels often differ from what it stores — a page headed
+"Editorial" for a stored `opinion` — and someone writing an email types what
+they read on the site. A value with no alternatives lists `[]`.
+
+An unrecognised value is **refused in the bounce**, naming what is accepted,
+rather than written as frontmatter that breaks the site build or quietly takes
+the schema's default.
+
+A **string** field is stored as written. Use it where the value is open-ended,
+or where the site itself warns about unknown values at build time.
+
+**Declaring a field is the only way a header line becomes frontmatter.** A site
+that declares nothing behaves exactly as it did before this existed: `Section:
+Tutorial` at the top of an email is part of the post.
+
+Two related settings:
+
+```jsonc
+"frontmatter": { "layout": "WideLayout" },
+"summaryMinLength": 100
+```
+
+`frontmatter` is added to every post for that site, and a header-block value for
+the same key overrides it. `summaryMinLength` notes a missing or short summary
+in the pull request — advisory only, never a rejection, since a summary is what
+link previews and search results show.
 
 ### By HTTPS
 
@@ -243,6 +308,17 @@ curl -X POST https://post-inbox.<subdomain>.workers.dev \
 `title` and `body` are required. `site` names which site to post to, and may be
 omitted when only one is configured. `date`, `tags`, `summary` and `draft` are
 optional. The bearer token is the one for that site.
+
+Any [site-specific field](#site-specific-fields) is a top-level key too, and is
+validated the same way — the same aliases, and a `400` naming the accepted
+values rather than a bounce:
+
+```bash
+  -d '{"title":"My New Post","body":"Hello.","section":"Tutorial","series":"Building a CLI"}'
+```
+
+A key the site did not declare is ignored, as an undeclared header line is left
+as prose.
 
 ### Markdown, and what MDX does to it
 

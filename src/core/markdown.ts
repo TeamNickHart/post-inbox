@@ -100,6 +100,15 @@ export function renderPost(request: DraftPostRequest): string {
   if (request.authorFile) {
     lines.push(`authors: [${yamlString(request.authorFile)}]`)
   }
+
+  // Site-declared fields last, so the built-in keys keep the order the
+  // existing posts use and a diff of two posts stays readable. Values are
+  // already validated against the site's declarations; quoting them the same
+  // way as everything else keeps the frontmatter uniform, and an enum value
+  // like `build` is a plain string to YAML either way.
+  for (const [name, value] of Object.entries(request.extraFrontmatter ?? {})) {
+    lines.push(`${name}: ${yamlString(value)}`)
+  }
   lines.push('---', '')
 
   // Escaping runs last: `linkifyBareUrls` produces markdown links, which

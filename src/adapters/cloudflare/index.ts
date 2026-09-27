@@ -2,6 +2,7 @@ import PostalMime, { type Email } from 'postal-mime'
 import { createDraftPost } from '../../core/createDraftPost.ts'
 import { GitHubClient, GitHubError } from '../../core/github.ts'
 import { emailToPost } from '../../core/emailToPost.ts'
+import { resolveExtraFields } from '../../core/extraFields.ts'
 import type { InboundAttachment } from '../../core/attachments.ts'
 import { authorFileForSender } from '../../core/sites.ts'
 import type { DraftPostRequest } from '../../core/types.ts'
@@ -55,6 +56,12 @@ export default {
       },
       {
         ...(site.assets ? { assets: site.assets } : {}),
+        // What this site's schema accepts beyond the built-in keys, plus the
+        // frontmatter every one of its posts carries. Absent for a site that
+        // declares neither, which is the behaviour every site had before.
+        ...(site.extraFields ? { extraFields: site.extraFields } : {}),
+        ...(site.frontmatter ? { frontmatter: site.frontmatter } : {}),
+        ...(site.summaryMinLength ? { summaryMinLength: site.summaryMinLength } : {}),
         // Conversion is on unless the site opts out: a site that accepts
         // attachments wants renderable ones, and without this an iPhone photo
         // is refused rather than committed. No binding means no converter,
@@ -187,9 +194,23 @@ export default {
     // so `author` is a claim about attribution rather than an identity.
     const authorFile = authorFileForSender(target.site, parsed.request.author)
 
+    // Validated here rather than in the payload parser, because which fields
+    // are legal depends on the site and the site is only known now. A bad value
+    // is a 400 naming the accepted values, matching the bounce an emailed one
+    // produces.
+    const resolved = resolveExtraFields(parsed.extra ?? {}, target.site.extraFields)
+    if (!resolved.ok) {
+      return json({ error: resolved.errors.map((item) => item.message).join('; ') }, 400)
+    }
+    const extraFrontmatter = { ...(target.site.frontmatter ?? {}), ...resolved.values }
+
     try {
       const result = await createDraftPost(
-        { ...parsed.request, ...(authorFile ? { authorFile } : {}) },
+        {
+          ...parsed.request,
+          ...(authorFile ? { authorFile } : {}),
+          ...(Object.keys(extraFrontmatter).length > 0 ? { extraFrontmatter } : {}),
+        },
         target.site,
         githubClient(target.secrets.githubToken),
       )
@@ -304,7 +325,7 @@ function hasValidBearerToken(request: Request, expected: string | undefined): bo
 /** Validate and normalize the HTTPS payload. */
 function parsePostPayload(
   payload: unknown,
-): { request: DraftPostRequest; site?: string } | { error: string } {
+): { request: DraftPostRequest; site?: string; extra?: Record<string, string> } | { error: string } {
   if (typeof payload !== 'object' || payload === null) {
     return { error: 'Body must be a JSON object' }
   }
@@ -341,8 +362,20 @@ function parsePostPayload(
     return { error: '`site` must be a string' }
   }
 
+  // Site-declared fields arrive as top-level keys, matching how `title` and
+  // `summary` already work. They cannot be validated here — the site is not
+  // resolved until later — so string values are collected and checked once it
+  // is. A key the site did not declare is ignored, exactly as an undeclared
+  // header line is left as prose.
+  const extra: Record<string, string> = {}
+  for (const [key, value] of Object.entries(body)) {
+    if (BUILT_IN_PAYLOAD_KEYS.has(key)) continue
+    if (typeof value === 'string') extra[key] = value
+  }
+
   return {
     ...(typeof body.site === 'string' ? { site: body.site } : {}),
+    ...(Object.keys(extra).length > 0 ? { extra } : {}),
     request: {
       title,
       body: text,
@@ -354,6 +387,18 @@ function parsePostPayload(
     },
   }
 }
+
+/** Keys the payload defines itself; anything else may be a declared field. */
+const BUILT_IN_PAYLOAD_KEYS = new Set([
+  'title',
+  'body',
+  'date',
+  'author',
+  'tags',
+  'summary',
+  'draft',
+  'site',
+])
 
 function json(value: unknown, status: number): Response {
   return new Response(JSON.stringify(value, null, 2), {

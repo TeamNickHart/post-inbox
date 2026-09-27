@@ -1,3 +1,4 @@
+import { isReservedFieldName } from './extraFields.ts'
 import type { SiteConfig } from './types.ts'
 
 /**
@@ -131,6 +132,7 @@ export function validateSites(file: unknown): SiteDefinition[] {
 
     validateAuthorMap(site)
     validateAssets(site)
+    validateExtraFields(site)
   }
 
   return sites
@@ -176,6 +178,103 @@ function validateAssets(site: SiteDefinition): void {
     throw new ConfigError(
       `site ${site.key} assets.convertImages must be true or false, not ${typeof assets.convertImages}`,
     )
+  }
+}
+
+/**
+ * Check a site's `extraFields`, `frontmatter` and `summaryMinLength`.
+ *
+ * These become frontmatter in someone's post, so a mistake here is a broken
+ * site build or a field that silently never works. Checked at build time by
+ * `pnpm build:sites`, which is cheaper than discovering it when an email
+ * arrives.
+ */
+function validateExtraFields(site: SiteDefinition): void {
+  const fields = site.extraFields
+  if (fields !== undefined) {
+    if (typeof fields !== 'object' || fields === null || Array.isArray(fields)) {
+      throw new ConfigError(`site ${site.key} has an extraFields that is not an object`)
+    }
+
+    for (const [name, definition] of Object.entries(fields)) {
+      if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(name)) {
+        throw new ConfigError(
+          `site ${site.key} extraFields has an invalid field name: ${name}`,
+        )
+      }
+      // A field sharing a name with a built-in would emit the key twice, which
+      // YAML parses with the second winning — a post with the wrong date rather
+      // than an error.
+      if (isReservedFieldName(name)) {
+        throw new ConfigError(
+          `site ${site.key} extraFields cannot redeclare \`${name}\`, which every post already has`,
+        )
+      }
+      if (typeof definition !== 'object' || definition === null || Array.isArray(definition)) {
+        throw new ConfigError(`site ${site.key} extraFields.${name} is not an object`)
+      }
+      // Read as `unknown`: this is hand-edited JSON, so the declared type says
+      // what it should be rather than what it is.
+      const shape = definition as { type?: unknown; values?: unknown }
+      if (shape.type === 'string') continue
+      if (shape.type !== 'enum') {
+        throw new ConfigError(
+          `site ${site.key} extraFields.${name} has an unknown type: ${String(shape.type)}`,
+        )
+      }
+
+      const values = shape.values as Record<string, unknown> | undefined
+      if (typeof values !== 'object' || values === null || Array.isArray(values)) {
+        throw new ConfigError(`site ${site.key} extraFields.${name} needs a \`values\` object`)
+      }
+      if (Object.keys(values).length === 0) {
+        throw new ConfigError(
+          `site ${site.key} extraFields.${name} has no values, so nothing would ever be accepted`,
+        )
+      }
+
+      // An alias matching two stored values makes the winner depend on key
+      // order, which is exactly the sort of thing nobody debugs twice.
+      const seen = new Map<string, string>()
+      for (const [stored, aliases] of Object.entries(values)) {
+        if (!Array.isArray(aliases) || aliases.some((alias) => typeof alias !== 'string')) {
+          throw new ConfigError(
+            `site ${site.key} extraFields.${name}.${stored} must be an array of alternative spellings`,
+          )
+        }
+        for (const spelling of [stored, ...aliases]) {
+          const previous = seen.get(spelling.toLowerCase())
+          if (previous !== undefined && previous !== stored) {
+            throw new ConfigError(
+              `site ${site.key} extraFields.${name} maps \`${spelling}\` to both ${previous} and ${stored}`,
+            )
+          }
+          seen.set(spelling.toLowerCase(), stored)
+        }
+      }
+    }
+  }
+
+  const frontmatter = site.frontmatter
+  if (frontmatter !== undefined) {
+    if (typeof frontmatter !== 'object' || frontmatter === null || Array.isArray(frontmatter)) {
+      throw new ConfigError(`site ${site.key} has a frontmatter that is not an object`)
+    }
+    for (const [name, value] of Object.entries(frontmatter)) {
+      if (typeof value !== 'string') {
+        throw new ConfigError(`site ${site.key} frontmatter.${name} must be a string`)
+      }
+      if (isReservedFieldName(name)) {
+        throw new ConfigError(
+          `site ${site.key} frontmatter cannot set \`${name}\`, which every post already has`,
+        )
+      }
+    }
+  }
+
+  const minimum = site.summaryMinLength
+  if (minimum !== undefined && (typeof minimum !== 'number' || !Number.isInteger(minimum) || minimum < 1)) {
+    throw new ConfigError(`site ${site.key} summaryMinLength must be a positive whole number`)
   }
 }
 
