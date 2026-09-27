@@ -1,3 +1,4 @@
+import type { ExtraFieldDefinitions } from './extraFields.ts'
 import type { FileToCommit } from './github.ts'
 
 /**
@@ -44,6 +45,17 @@ export interface DraftPostRequest {
    * breadcrumb back to why.
    */
   convertedAttachments?: { filename: string; from: string }[]
+  /**
+   * Extra frontmatter for this site, already validated against its
+   * declarations: field name → stored value. Emitted after the built-in keys,
+   * in declaration order.
+   */
+  extraFrontmatter?: Record<string, string>
+  /**
+   * Advisory note about the summary's length, for the pull request body.
+   * Absent when the summary is fine or the site set no minimum.
+   */
+  summaryHint?: string
   /**
    * Value for the post's `draft` frontmatter field.
    *
@@ -92,6 +104,32 @@ export interface SiteConfig {
      */
     convertImages?: boolean
   }
+  /**
+   * Extra frontmatter fields this site's schema accepts, beyond the ones every
+   * post has. Readable from the email header block (`Pillar: Leading`) and
+   * from the HTTPS body.
+   *
+   * Declaring a field is the only way a header line becomes frontmatter: an
+   * undeclared key stays prose, so a site that declares nothing behaves exactly
+   * as it did before this existed. See `core/extraFields.ts`.
+   */
+  extraFields?: ExtraFieldDefinitions
+  /**
+   * Fixed frontmatter added to every post for this site, e.g.
+   * `{ "layout": "PostBanner" }`.
+   *
+   * A value from the header block for the same key wins, so a default is a
+   * starting point rather than a constraint.
+   */
+  frontmatter?: Record<string, string>
+  /**
+   * Note in the pull request body when the summary is missing or shorter than
+   * this many characters.
+   *
+   * Advisory only — never a rejection. A short summary is worth fixing during
+   * review, but it is not a reason to throw away someone's writing.
+   */
+  summaryMinLength?: number
 }
 
 /** The result of a successful post creation. */

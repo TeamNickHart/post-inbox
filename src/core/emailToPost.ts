@@ -8,6 +8,10 @@ import {
 } from './attachments.ts'
 import { parseHeaders } from './headers.ts'
 import {
+  resolveExtraFields,
+  type ExtraFieldDefinitions,
+} from './extraFields.ts'
+import {
   convertAttachments,
   type ConversionNote,
   type ImageConverter,
@@ -54,6 +58,15 @@ export interface EmailToPostOptions {
    * behaviour a site without a converter configured keeps.
    */
   imageConverter?: ImageConverter
+  /**
+   * Extra frontmatter fields this site accepts, read from the header block.
+   * Omit and only `Tags:`/`Summary:` are recognised, as before.
+   */
+  extraFields?: ExtraFieldDefinitions
+  /** Fixed frontmatter for every post on this site; a header value wins. */
+  frontmatter?: Record<string, string>
+  /** Note a missing or short summary in the pull request. Advisory only. */
+  summaryMinLength?: number
   /** Strip an RFC 3676 signature block from the body. Defaults to true. */
   stripSignature?: boolean
   /** Commit the post with `draft: true`. Defaults to false. */
@@ -169,7 +182,10 @@ export async function emailToPost(
 
   // Metadata the subject line cannot carry: `Tags:` and `Summary:` lines at
   // the top of the body.
-  const { tags, summary, body } = parseHeaders(stripped)
+  const { tags, summary, extra, body } = parseHeaders(
+    stripped,
+    Object.keys(options.extraFields ?? {}),
+  )
   if (!body) {
     return {
       ok: false,
@@ -178,6 +194,22 @@ export async function emailToPost(
       senderMessage: 'the message contained only a Tags/Summary block and no post body',
     }
   }
+
+  // A value the site's schema would reject is a bounce, not a silent drop: the
+  // frontmatter would otherwise either break the site build or quietly take the
+  // schema's default, which is wrong in a way that survives review.
+  const resolved = resolveExtraFields(extra ?? {}, options.extraFields)
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      kind: 'content',
+      reason: `invalid field value: ${resolved.errors.map((e) => e.field).join(', ')}`,
+      senderMessage: resolved.errors.map((e) => e.message).join('; '),
+    }
+  }
+
+  // Site defaults first, so a header line for the same key overrides one.
+  const extraFrontmatter = { ...(options.frontmatter ?? {}), ...resolved.values }
 
   // Attachments are named from the post's slug, so the slug has to be settled
   // before they can be planned.
@@ -221,6 +253,8 @@ export async function emailToPost(
       body: finalBody,
       ...(tags ? { tags } : {}),
       ...(summary ? { summary } : {}),
+      ...(Object.keys(extraFrontmatter).length > 0 ? { extraFrontmatter } : {}),
+      ...(summaryHint(summary, options.summaryMinLength) ?? {}),
       ...(extraFiles ? { extraFiles } : {}),
       ...(rejectedAttachments.length > 0 ? { rejectedAttachments } : {}),
       ...(conversions.length > 0 ? { convertedAttachments: conversions } : {}),
@@ -229,4 +263,29 @@ export async function emailToPost(
       draft: options.draft === true,
     },
   }
+}
+
+/**
+ * Note a summary worth improving, for the pull request body.
+ *
+ * Advisory by design. A short summary is worth fixing while the post is being
+ * reviewed — link previews and search results use it — but it is never a reason
+ * to reject someone's writing, so this produces a note and nothing else.
+ */
+function summaryHint(
+  summary: string | undefined,
+  minimum: number | undefined,
+): { summaryHint: string } | undefined {
+  if (!minimum) return undefined
+  if (!summary) {
+    return {
+      summaryHint: `No summary. Add a \`Summary:\` line of at least ${minimum} characters — it is what link previews and search results show.`,
+    }
+  }
+  if (summary.length < minimum) {
+    return {
+      summaryHint: `Summary is ${summary.length} characters; ${minimum} or more reads better in link previews and search results.`,
+    }
+  }
+  return undefined
 }

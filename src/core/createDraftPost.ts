@@ -118,6 +118,9 @@ function pullRequestBody(request: DraftPostRequest, path: string): string {
           '',
         ]
       : []),
+    // A note rather than a warning: the post is fine, the summary is just
+    // worth a second look while someone is already reviewing it.
+    ...(request.summaryHint ? ['> [!NOTE]', `> ${request.summaryHint}`, ''] : []),
     'Review the Vercel preview, then merge to publish.',
   ].join('\n')
 }
