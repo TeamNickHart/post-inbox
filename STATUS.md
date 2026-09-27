@@ -27,6 +27,7 @@ Last updated 2026-09-13. Worker version `77cd627b`, 180 tests passing.
 | MDX compile check | All three sites — blocking, verified red on invalid MDX and green once fixed |
 | HEIC conversion | Cloudflare Images binding, verified end to end against a real iPhone HEIC |
 | Signature stripping | The `-- ` delimiter, plus a narrow fallback for clients that send none |
+| Site-specific frontmatter | Declared per site; `Pillar: Leading` stores `leadership`, an invalid value bounces |
 
 Three sites configured, each with its own inbound address, sender allowlist and
 API token. One GitHub token covers all three, scoped to the org.
@@ -445,6 +446,49 @@ recipe scored 0.86. Not a usable separation.
 
 Thresholds are named constants at the top of `src/core/signature.ts`, each
 carrying its reasoning, and `STRIP_SIGNATURE=false` disables both rules.
+
+## Site-specific frontmatter
+
+Sites built on the same template diverge. `nickhart-blog` has a `pillar` enum
+and links posts to a project; the other two have neither. So a site declares
+what its schema accepts in `sites.jsonc` and nothing site-specific lives in
+code — post-inbox is meant to be open-sourced.
+
+```jsonc
+"extraFields": {
+  "pillar": { "type": "enum", "values": { "build": ["building"], "leadership": ["leading"], "fun": [] } },
+  "project": { "type": "string" }
+},
+"frontmatter": { "layout": "PostBanner" },
+"summaryMinLength": 100
+```
+
+A declared name then works in the email header block (`Pillar: Leading`, keys
+case-insensitive) and as a top-level key in the HTTPS body.
+
+**The enum is a map, not the flat list of values it might obviously have been.**
+A site's labels often differ from what it stores — the badge reads "Leading" for
+a stored `leadership` — and someone writing an email types what they read. So
+the key is the stored value and the array is the *other* accepted spellings; a
+stored value always accepts itself, and matching ignores case.
+
+**An invalid value bounces**, naming what is accepted. The alternatives were
+writing frontmatter that breaks the site build, or dropping the field so the
+post quietly takes the schema default — wrong in a way that survives review.
+
+**Declaring a field is the only way a header line becomes frontmatter.** A site
+that declares nothing is bit-for-bit unchanged: `Pillar: Leading` stays prose.
+That is the property the other two sites depend on, and it has its own test.
+
+Three validation rules exist because the failure is otherwise silent:
+redeclaring a built-in key would emit the same YAML key twice (the second wins —
+a post with the wrong date, not an error); an alias mapping to two stored values
+would make the winner depend on key order; and an enum with no values would
+accept nothing, forever.
+
+The summary hint is advisory, landing as a `> [!NOTE]` in the pull request. A
+thin summary is worth fixing while someone is reviewing, never a reason to throw
+away a post.
 
 ## Known gaps
 
